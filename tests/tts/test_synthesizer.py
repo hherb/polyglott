@@ -11,6 +11,7 @@ from polyglott.constants import TTS_CHILDREN_SPEED, TTS_DEFAULT_SPEED
 from polyglott.tts.synthesizer import (
     KOKORO_LANG_CODES,
     KOKORO_VOICES,
+    PiperSynthesizer,
     SpeechSynthesizer,
     SynthesisResult,
     TTSBackend,
@@ -109,3 +110,41 @@ class TestCreateSynthesizer:
         """Test adult mode uses normal speed."""
         synth = create_synthesizer(for_children=False)
         assert synth.speed == TTS_DEFAULT_SPEED
+
+
+class TestPiperSynthesizer:
+    """Tests for PiperSynthesizer class."""
+
+    def test_initialization(self) -> None:
+        """Test Piper synthesizer initializes correctly."""
+        synth = PiperSynthesizer()
+        assert synth.sample_rate == 22050
+        assert synth._cache_dir.exists()
+
+    def test_supported_languages(self) -> None:
+        """Test Piper supports expected languages."""
+        synth = PiperSynthesizer()
+        languages = synth.supported_languages
+        assert "de" in languages
+        assert "en" in languages
+        assert "es" in languages
+
+    def test_voice_configs(self) -> None:
+        """Test voice configurations are properly structured."""
+        for lang, config in PiperSynthesizer.PIPER_VOICES.items():
+            assert "name" in config
+            assert "path" in config
+            assert config["name"].startswith(lang[:2])
+
+    def test_cache_dir_created(self) -> None:
+        """Test cache directory is created."""
+        synth = PiperSynthesizer()
+        assert synth._cache_dir.exists()
+        assert synth._cache_dir.is_dir()
+
+    def test_empty_text_returns_silence(self) -> None:
+        """Test empty text returns silent audio."""
+        synth = PiperSynthesizer()
+        result = synth.synthesize("", language="de")
+        assert isinstance(result, SynthesisResult)
+        assert result.duration_seconds == pytest.approx(0.1, rel=0.1)
