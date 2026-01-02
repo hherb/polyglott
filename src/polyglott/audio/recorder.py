@@ -2,12 +2,14 @@
 
 This module provides real-time audio recording that automatically
 detects when the user starts and stops speaking.
+
+Supports both batch and streaming recording modes.
 """
 
 from collections import deque
 from dataclasses import dataclass
 from threading import Event, Thread
-from typing import Callable, Optional
+from typing import Callable, Generator, Optional
 
 import numpy as np
 
@@ -223,6 +225,130 @@ class AudioRecorder:
             sample_rate=self.sample_rate,
             duration_seconds=duration,
             was_speech_detected=True,
+        )
+
+    def record_streaming(
+        self,
+        max_duration: float = MAX_RECORDING_DURATION_SECONDS,
+        chunk_duration_seconds: float = 0.5,
+        on_speech_start: Optional[Callable[[], None]] = None,
+        on_speech_end: Optional[Callable[[], None]] = None,
+    ) -> Generator[np.ndarray, None, RecordingResult]:
+        """Record audio in a streaming fashion.
+
+        Yields audio chunks as they are recorded, enabling
+        real-time processing while recording continues.
+
+        Args:
+            max_duration: Maximum recording duration in seconds.
+            chunk_duration_seconds: Duration of each yielded chunk.
+            on_speech_start: Callback when speech starts.
+            on_speech_end: Callback when speech ends.
+
+        Yields:
+            Audio chunks as numpy arrays.
+
+        Returns:
+            Final RecordingResult with complete audio.
+        """
+        self._ensure_sounddevice()
+        self.vad.reset()
+
+        speech_buffer: list[np.ndarray] = []
+        audio_buffer: list[np.ndarray] = []
+        speech_detected = False
+        speech_started = False
+
+        chunk_samples = VAD_CHUNK_SAMPLES
+        yield_samples = int(chunk_duration_seconds * self.sample_rate)
+        max_chunks = int(max_duration * self.sample_rate / chunk_samples)
+
+        self._is_recording = True
+        self._stop_event.clear()
+
+        pending_yield: list[np.ndarray] = []
+
+        try:
+            with self._sounddevice.InputStream(
+                samplerate=self.sample_rate,
+                channels=self.channels,
+                dtype=np.float32,
+                blocksize=chunk_samples,
+            ) as stream:
+                for _ in range(max_chunks):
+                    if self._stop_event.is_set():
+                        break
+
+                    # Read audio chunk
+                    chunk, overflowed = stream.read(chunk_samples)
+                    if overflowed:
+                        continue
+
+                    # Flatten to mono if needed
+                    if chunk.ndim > 1:
+                        chunk = chunk[:, 0]
+
+                    # Process with VAD
+                    vad_result = self.vad.process_chunk(chunk)
+
+                    # Handle state transitions
+                    if vad_result.state == SpeechState.SPEECH_START:
+                        speech_detected = True
+                        speech_started = True
+                        if on_speech_start:
+                            on_speech_start()
+                        # Include pre-speech buffer
+                        speech_buffer.extend(audio_buffer[-10:])
+                        speech_buffer.append(chunk)
+                        pending_yield.extend(audio_buffer[-10:])
+                        pending_yield.append(chunk)
+
+                    elif vad_result.state == SpeechState.SPEAKING:
+                        if speech_started:
+                            speech_buffer.append(chunk)
+                            pending_yield.append(chunk)
+
+                    elif vad_result.state == SpeechState.SPEECH_END:
+                        if speech_started:
+                            speech_buffer.append(chunk)
+                            pending_yield.append(chunk)
+                            if on_speech_end:
+                                on_speech_end()
+
+                            # Yield remaining audio and break
+                            if pending_yield:
+                                yield np.concatenate(pending_yield)
+                            break
+
+                    else:  # SILENCE
+                        audio_buffer.append(chunk)
+                        if len(audio_buffer) > 20:
+                            audio_buffer.pop(0)
+
+                    # Yield chunks when we have enough
+                    if speech_started:
+                        total_pending = sum(len(c) for c in pending_yield)
+                        if total_pending >= yield_samples:
+                            yield np.concatenate(pending_yield)
+                            pending_yield = []
+
+        finally:
+            self._is_recording = False
+
+        # Combine speech buffer
+        if speech_buffer:
+            audio = np.concatenate(speech_buffer)
+        else:
+            audio = np.zeros(int(self.sample_rate * 0.1), dtype=np.float32)
+
+        duration = len(audio) / self.sample_rate
+        valid_speech = speech_detected and duration >= MIN_SPEECH_DURATION_SECONDS
+
+        return RecordingResult(
+            audio=audio,
+            sample_rate=self.sample_rate,
+            duration_seconds=duration,
+            was_speech_detected=valid_speech,
         )
 
     def stop(self) -> None:

@@ -22,6 +22,10 @@ class ConversationManager:
     Coordinates the audio pipeline with session tracking
     to provide a complete tutoring experience.
 
+    Supports:
+    - Barge-in interruption: Users can interrupt the tutor mid-response
+    - AI-initiated follow-ups: Tutor proactively engages silent users
+
     Example:
         >>> manager = ConversationManager(
         ...     student_name="Emma",
@@ -39,6 +43,8 @@ class ConversationManager:
         age_group: AgeGroup = AgeGroup.EARLY_PRIMARY,
         on_turn_complete: Optional[TurnCallback] = None,
         on_state_change: Optional[StateCallback] = None,
+        enable_barge_in: bool = True,
+        enable_followups: bool = True,
     ) -> None:
         """Initialize the conversation manager.
 
@@ -49,6 +55,8 @@ class ConversationManager:
             age_group: Student's age group.
             on_turn_complete: Callback after each turn.
             on_state_change: Callback for state changes.
+            enable_barge_in: Allow user to interrupt tutor speech.
+            enable_followups: Enable AI-initiated follow-up prompts.
         """
         self.student_name = student_name
         self.target_language = target_language
@@ -56,6 +64,8 @@ class ConversationManager:
         self.age_group = age_group
         self.on_turn_complete = on_turn_complete
         self.on_state_change = on_state_change
+        self.enable_barge_in = enable_barge_in
+        self.enable_followups = enable_followups
 
         self._session: Optional[ConversationSession] = None
         self._pipeline: Optional[AudioPipeline] = None
@@ -75,12 +85,13 @@ class ConversationManager:
             age_group=self.age_group,
         )
 
-        # Create pipeline
+        # Create pipeline with barge-in support
         self._pipeline = AudioPipeline(
             target_language=self.target_language,
             native_language=self.native_language,
             age_group=self.age_group,
             on_state_change=self.on_state_change,
+            enable_barge_in=self.enable_barge_in,
         )
 
         # Start session and get greeting
@@ -92,6 +103,9 @@ class ConversationManager:
     def process_turn(self) -> ConversationTurn:
         """Process a single conversation turn.
 
+        If follow-ups are enabled, uses AI-initiated prompts
+        to keep the user engaged when they're silent.
+
         Returns:
             ConversationTurn with turn data.
 
@@ -101,7 +115,14 @@ class ConversationManager:
         if not self._is_running or self._pipeline is None:
             raise RuntimeError("Conversation not started. Call start() first.")
 
-        turn = self._pipeline.process_turn()
+        # Use follow-up enabled processing if enabled
+        if self.enable_followups:
+            turn = self._pipeline.process_turn_with_followup(
+                enable_followups=True,
+                max_followup_tier=3,
+            )
+        else:
+            turn = self._pipeline.process_turn()
 
         # Record in session
         if self._session and turn.user_text:
