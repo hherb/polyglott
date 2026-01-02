@@ -85,7 +85,7 @@ MAX_TRANSCRIPTION_AUDIO_SECONDS: Final[float] = 30.0
 # =============================================================================
 
 # Default Ollama model for conversation
-DEFAULT_LLM_MODEL: Final[str] = "qwen2.5:7b"
+DEFAULT_LLM_MODEL: Final[str] = "gpt-oss:20b"
 
 # Maximum tokens in LLM response
 MAX_LLM_RESPONSE_TOKENS: Final[int] = 256
