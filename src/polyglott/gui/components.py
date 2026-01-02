@@ -190,7 +190,7 @@ class StatusIndicator(ft.Container):
             width=40,
             height=40,
             border_radius=20,
-            animate=ft.animation.Animation(1000, ft.AnimationCurve.EASE_IN_OUT),
+            animate=ft.Animation(1000, ft.AnimationCurve.EASE_IN_OUT),
         )
 
         super().__init__(

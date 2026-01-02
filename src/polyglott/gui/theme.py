@@ -101,11 +101,9 @@ def create_theme() -> ft.Theme:
         color_scheme=ft.ColorScheme(
             primary=PRIMARY_COLOR,
             secondary=ACCENT_COLOR,
-            background=BG_COLOR,
             surface=CARD_BG,
             on_primary=TEXT_LIGHT,
             on_secondary=TEXT_LIGHT,
-            on_background=TEXT_PRIMARY,
             on_surface=TEXT_PRIMARY,
         ),
     )

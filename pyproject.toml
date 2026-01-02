@@ -41,6 +41,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "rich>=13.0.0",
     "pip>=21.0", # Required by Kokoro for spaCy model installation
+    "useful-moonshine-onnx>=20251121",
 ]
 
 [project.optional-dependencies]

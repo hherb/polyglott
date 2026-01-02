@@ -142,7 +142,7 @@ class PolyglottApp:
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     padding=SPACING_LG,
-                    alignment=ft.alignment.center,
+                    alignment=ft.Alignment(0, 0),
                 ),
                 # User list or new user prompt
                 ft.Container(
@@ -561,7 +561,7 @@ class PolyglottApp:
                 self._process_conversation_turn()
             finally:
                 # Reset UI on main thread
-                self.page.run_thread_safe(self._reset_after_turn)
+                self.page.run_thread(self._reset_after_turn)
 
         threading.Thread(target=run_turn, daemon=True).start()
 
@@ -590,7 +590,7 @@ class PolyglottApp:
                 self._status_indicator.set_listening()
             self.page.update()
 
-        self.page.run_thread_safe(update_status_listening)
+        self.page.run_thread(update_status_listening)
 
         recording = recorder.record_utterance(
             on_speech_start=lambda: None,
@@ -606,7 +606,7 @@ class PolyglottApp:
                 self._status_indicator.set_processing()
             self.page.update()
 
-        self.page.run_thread_safe(update_status_processing)
+        self.page.run_thread(update_status_processing)
 
         transcription = transcriber.transcribe(
             recording.audio,
@@ -620,7 +620,7 @@ class PolyglottApp:
         def add_user_msg() -> None:
             self._add_message(transcription.text, is_user=True)
 
-        self.page.run_thread_safe(add_user_msg)
+        self.page.run_thread(add_user_msg)
 
         # Generate response
         def update_status_thinking() -> None:
@@ -628,7 +628,7 @@ class PolyglottApp:
                 self._status_indicator.set_thinking()
             self.page.update()
 
-        self.page.run_thread_safe(update_status_thinking)
+        self.page.run_thread(update_status_thinking)
 
         response = tutor.respond(transcription.text)
 
@@ -636,7 +636,7 @@ class PolyglottApp:
         def add_tutor_msg() -> None:
             self._add_message(response.text, is_user=False)
 
-        self.page.run_thread_safe(add_tutor_msg)
+        self.page.run_thread(add_tutor_msg)
 
         # Speak response
         def update_status_speaking() -> None:
@@ -644,7 +644,7 @@ class PolyglottApp:
                 self._status_indicator.set_speaking()
             self.page.update()
 
-        self.page.run_thread_safe(update_status_speaking)
+        self.page.run_thread(update_status_speaking)
 
         if self._synthesizer and self._player:
             synthesis = self._synthesizer.synthesize(
