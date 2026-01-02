@@ -4,7 +4,6 @@ This module provides speech recognition functionality optimized
 for real-time conversational applications with multilingual support.
 """
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path

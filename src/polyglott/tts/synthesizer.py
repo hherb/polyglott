@@ -4,7 +4,6 @@ This module provides speech synthesis for multiple languages,
 using Kokoro TTS for most languages and Piper TTS for German.
 """
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -274,7 +273,9 @@ class PiperSynthesizer:
                 self._voice_cache[voice_name] = PiperVoice.load(voice_name)
 
             piper_voice = self._voice_cache[voice_name]
-            audio_data = piper_voice.synthesize(text, speed=speed)
+            # Piper uses length_scale (inverse of speed: smaller = faster)
+            length_scale = 1.0 / speed if speed > 0 else 1.0
+            audio_data = piper_voice.synthesize(text, length_scale=length_scale)
 
             audio = np.array(audio_data, dtype=np.float32)
             duration = len(audio) / self.sample_rate
