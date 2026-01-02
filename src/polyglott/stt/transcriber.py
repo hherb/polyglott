@@ -648,11 +648,29 @@ class SpeechTranscriber:
         """Detect the best available transcription backend.
 
         Prefers Whisper backends for better multilingual/code-switching support.
+        On Apple Silicon, prefers MLX Whisper for hardware optimization.
 
         Returns:
             Best available backend.
         """
-        # Try faster-whisper first (cross-platform, best multilingual)
+        import platform
+        import sys
+
+        # Check if running on Apple Silicon
+        is_apple_silicon = (
+            sys.platform == "darwin" and platform.machine() == "arm64"
+        )
+
+        # On Apple Silicon, prefer MLX Whisper (hardware optimized)
+        if is_apple_silicon:
+            try:
+                import mlx_whisper  # noqa: F401
+
+                return TranscriberBackend.WHISPER_MLX
+            except ImportError:
+                pass
+
+        # Try faster-whisper (cross-platform, good multilingual)
         try:
             from faster_whisper import WhisperModel  # noqa: F401
 
@@ -660,13 +678,14 @@ class SpeechTranscriber:
         except ImportError:
             pass
 
-        # Try MLX Whisper (macOS Apple Silicon, good multilingual)
-        try:
-            import mlx_whisper  # noqa: F401
+        # Try MLX Whisper as fallback on non-Apple Silicon Macs
+        if not is_apple_silicon:
+            try:
+                import mlx_whisper  # noqa: F401
 
-            return TranscriberBackend.WHISPER_MLX
-        except ImportError:
-            pass
+                return TranscriberBackend.WHISPER_MLX
+            except ImportError:
+                pass
 
         # Fall back to Moonshine (fast but single-language focused)
         try:
