@@ -23,7 +23,7 @@ classifiers = [
 dependencies = [
     # Audio I/O
     "sounddevice>=0.4.6",
-    "numpy>=1.24.0",
+    "numpy>=1.24.0,<2.4",
 
     # VAD - Silero Voice Activity Detection
     "silero-vad>=5.1",
