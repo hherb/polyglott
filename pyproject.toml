@@ -1,0 +1,96 @@
+[project]
+name = "polyglott"
+version = "0.1.0"
+description = "A LLM-based conversational multi-lingual language tutor"
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Polyglott Team" }
+]
+keywords = ["language-learning", "tutor", "speech-recognition", "tts", "llm", "offline"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+dependencies = [
+    # Audio I/O
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+
+    # VAD - Silero Voice Activity Detection
+    "silero-vad>=5.1",
+
+    # STT - Speech to Text (Moonshine for edge, mlx-whisper for Mac)
+    "onnxruntime>=1.16.0",
+
+    # LLM - Ollama client
+    "ollama>=0.3.0",
+
+    # TTS - Kokoro (lightweight, multilingual)
+    "kokoro>=0.3.0",
+
+    # Utilities
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+]
+
+# macOS-specific dependencies for Apple Silicon optimization
+macos = [
+    "mlx>=0.5.0",
+    "mlx-whisper>=0.1.0",
+]
+
+# Piper TTS for German language support
+piper = [
+    "piper-tts>=1.2.0",
+]
+
+[project.scripts]
+polyglott = "polyglott.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/polyglott"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "D", "UP", "ANN", "B", "C4", "SIM"]
+ignore = ["D100", "D104", "ANN101", "ANN102"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
