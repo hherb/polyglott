@@ -18,7 +18,13 @@ from polyglott.constants import (
     TTS_SAMPLE_RATE,
     TargetLanguage,
 )
-from polyglott.utils.text import prepare_for_tts
+from polyglott.utils.text import (
+    LanguageSegment,
+    has_language_tags,
+    parse_language_tags,
+    prepare_for_tts,
+    strip_language_tags,
+)
 
 
 class TTSBackend(str, Enum):
@@ -498,6 +504,132 @@ class SpeechSynthesizer:
         speed = speed or self.speed
         backend, _ = self._get_backend(language)
         return backend.synthesize(text, language=language, speed=speed)
+
+    def synthesize_multilingual(
+        self,
+        text: str,
+        default_language: str = "en",
+        speed: Optional[float] = None,
+        clean_text: bool = True,
+    ) -> SynthesisResult:
+        """Synthesize text containing multiple languages with appropriate voices.
+
+        Parses language tags like <lang:de>Guten Tag</lang> and uses the
+        correct TTS voice for each segment, producing natural bilingual audio.
+
+        Args:
+            text: Text potentially containing language tags.
+            default_language: Language for untagged text (e.g., 'en').
+            speed: Speech speed, or None for default.
+            clean_text: If True, filter out emojis and non-speakable content.
+
+        Returns:
+            SynthesisResult with concatenated audio from all segments.
+
+        Example:
+            >>> synth = SpeechSynthesizer()
+            >>> text = "To say hello: <lang:de>Guten Tag</lang>"
+            >>> result = synth.synthesize_multilingual(text, default_language="en")
+            # "To say hello:" is spoken with English voice
+            # "Guten Tag" is spoken with German voice
+        """
+        speed = speed or self.speed
+
+        # Check if text has language tags
+        if not has_language_tags(text):
+            # No tags, use simple synthesis
+            return self.synthesize(
+                text, language=default_language, speed=speed, clean_text=clean_text
+            )
+
+        # Parse text into language segments
+        segments = parse_language_tags(text, default_language=default_language)
+
+        if not segments:
+            # Empty text
+            return SynthesisResult(
+                audio=np.zeros(int(TTS_SAMPLE_RATE * 0.1), dtype=np.float32),
+                sample_rate=TTS_SAMPLE_RATE,
+                duration_seconds=0.1,
+            )
+
+        # Synthesize each segment with appropriate voice
+        audio_chunks: list[np.ndarray] = []
+        target_sample_rate = TTS_SAMPLE_RATE
+
+        for segment in segments:
+            # Clean text if requested
+            segment_text = segment.text
+            if clean_text:
+                segment_text = prepare_for_tts(segment_text)
+
+            if not segment_text.strip():
+                continue
+
+            # Synthesize this segment
+            result = self.synthesize(
+                segment_text,
+                language=segment.language,
+                speed=speed,
+                clean_text=False,  # Already cleaned
+            )
+
+            # Resample if needed to match target sample rate
+            if result.sample_rate != target_sample_rate:
+                audio = self._resample(
+                    result.audio, result.sample_rate, target_sample_rate
+                )
+            else:
+                audio = result.audio
+
+            audio_chunks.append(audio)
+
+            # Add a tiny pause between segments for natural speech flow
+            pause_samples = int(target_sample_rate * 0.05)  # 50ms pause
+            audio_chunks.append(np.zeros(pause_samples, dtype=np.float32))
+
+        if not audio_chunks:
+            return SynthesisResult(
+                audio=np.zeros(int(target_sample_rate * 0.1), dtype=np.float32),
+                sample_rate=target_sample_rate,
+                duration_seconds=0.1,
+            )
+
+        # Concatenate all audio
+        combined_audio = np.concatenate(audio_chunks)
+        duration = len(combined_audio) / target_sample_rate
+
+        return SynthesisResult(
+            audio=combined_audio.astype(np.float32),
+            sample_rate=target_sample_rate,
+            duration_seconds=duration,
+        )
+
+    def _resample(
+        self, audio: np.ndarray, orig_rate: int, target_rate: int
+    ) -> np.ndarray:
+        """Resample audio to a different sample rate.
+
+        Args:
+            audio: Input audio array.
+            orig_rate: Original sample rate.
+            target_rate: Target sample rate.
+
+        Returns:
+            Resampled audio array.
+        """
+        if orig_rate == target_rate:
+            return audio
+
+        # Simple linear interpolation resampling
+        duration = len(audio) / orig_rate
+        target_length = int(duration * target_rate)
+
+        # Use numpy interpolation for resampling
+        x_orig = np.linspace(0, duration, len(audio))
+        x_new = np.linspace(0, duration, target_length)
+
+        return np.interp(x_new, x_orig, audio).astype(np.float32)
 
     def synthesize_to_file(
         self,
