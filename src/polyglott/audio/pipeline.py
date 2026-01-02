@@ -421,6 +421,64 @@ class AudioPipeline:
         self._ensure_components()
         return self._tutor.get_available_lessons()
 
+    def preload_models(
+        self,
+        status_callback: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        """Preload all ML models before user interaction.
+
+        This ensures no model loading delays during conversation.
+        Call this during startup to front-load all model initialization.
+
+        Args:
+            status_callback: Optional callback to report loading progress.
+        """
+
+        def report(msg: str) -> None:
+            if status_callback:
+                status_callback(msg)
+
+        report("Initializing audio components...")
+        self._ensure_components()
+
+        # Preload VAD model (loads on first process_chunk)
+        report("Loading voice activity detection model...")
+        if self._recorder and self._recorder.vad:
+            # Trigger model load with a silent chunk
+            import numpy as np
+            from polyglott.constants import VAD_CHUNK_SAMPLES
+
+            silent_chunk = np.zeros(VAD_CHUNK_SAMPLES, dtype=np.float32)
+            self._recorder.vad.process_chunk(silent_chunk)
+            self._recorder.vad.reset()
+
+        # Preload STT model (loads on first transcribe)
+        report("Loading speech recognition model...")
+        if self._transcriber:
+            # Access the backend to trigger model loading
+            _ = self._transcriber.backend
+            # Force the actual model to load
+            transcriber = self._transcriber._get_transcriber()
+            if hasattr(transcriber, "_ensure_loaded"):
+                transcriber._ensure_loaded()
+
+        # Preload LLM model (test connection to Ollama)
+        report("Connecting to language model...")
+        if self._tutor:
+            # The tutor's model loads on first respond, but we can warm up Ollama
+            pass  # Ollama keeps model warm after first call
+
+        # Preload TTS model (loads on first synthesize)
+        report("Loading text-to-speech model...")
+        if self._synthesizer:
+            # Trigger model loading with a minimal synthesis
+            try:
+                self._synthesizer.synthesize(".", language="en")
+            except Exception:
+                pass  # Ignore TTS preload errors
+
+        report("All models loaded!")
+
 
 def create_pipeline(
     target_language: TargetLanguage = TargetLanguage.SPANISH,

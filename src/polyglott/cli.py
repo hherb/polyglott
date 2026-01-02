@@ -354,6 +354,12 @@ def run_voice_mode(
         on_state_change=on_state_change,
     )
 
+    # Preload all ML models before user interaction starts
+    print_status("Loading AI models (this may take a moment)...", "info")
+    manager.preload_models(
+        status_callback=lambda msg: print_status(msg, "info")
+    )
+
     print_status("Starting voice session...", "info")
     print("(Press Ctrl+C to exit)\n")
 

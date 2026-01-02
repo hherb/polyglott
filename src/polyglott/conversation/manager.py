@@ -4,7 +4,7 @@ This module provides high-level conversation management,
 coordinating between the audio pipeline and session tracking.
 """
 
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 
 from polyglott.audio.pipeline import AudioPipeline, ConversationTurn, PipelineState
 from polyglott.constants import AgeGroup, TargetLanguage
@@ -43,7 +43,7 @@ class ConversationManager:
         age_group: AgeGroup = AgeGroup.EARLY_PRIMARY,
         on_turn_complete: Optional[TurnCallback] = None,
         on_state_change: Optional[StateCallback] = None,
-        enable_barge_in: bool = True,
+        enable_barge_in: bool = False,  # Disabled by default - picks up tutor audio
         enable_followups: bool = True,
     ) -> None:
         """Initialize the conversation manager.
@@ -71,6 +71,31 @@ class ConversationManager:
         self._pipeline: Optional[AudioPipeline] = None
         self._is_running = False
 
+    def preload_models(
+        self,
+        status_callback: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        """Preload all ML models before user interaction.
+
+        Call this after creating the manager but before starting
+        the conversation to avoid loading delays during interaction.
+
+        Args:
+            status_callback: Optional callback to report loading progress.
+        """
+        # Create pipeline if needed
+        if self._pipeline is None:
+            self._pipeline = AudioPipeline(
+                target_language=self.target_language,
+                native_language=self.native_language,
+                age_group=self.age_group,
+                on_state_change=self.on_state_change,
+                enable_barge_in=self.enable_barge_in,
+            )
+
+        # Delegate to pipeline's preload
+        self._pipeline.preload_models(status_callback)
+
     def start(self) -> str:
         """Start a new conversation session.
 
@@ -85,14 +110,15 @@ class ConversationManager:
             age_group=self.age_group,
         )
 
-        # Create pipeline with barge-in support
-        self._pipeline = AudioPipeline(
-            target_language=self.target_language,
-            native_language=self.native_language,
-            age_group=self.age_group,
-            on_state_change=self.on_state_change,
-            enable_barge_in=self.enable_barge_in,
-        )
+        # Create pipeline with barge-in support (if not already created by preload)
+        if self._pipeline is None:
+            self._pipeline = AudioPipeline(
+                target_language=self.target_language,
+                native_language=self.native_language,
+                age_group=self.age_group,
+                on_state_change=self.on_state_change,
+                enable_barge_in=self.enable_barge_in,
+            )
 
         # Start session and get greeting
         greeting = self._pipeline.start_session()
