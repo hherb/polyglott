@@ -22,7 +22,8 @@ AUDIO_BIT_DEPTH: Final[int] = 16
 AUDIO_CHANNELS: Final[int] = 1
 
 # Duration of audio chunks for VAD processing (milliseconds)
-VAD_CHUNK_DURATION_MS: Final[int] = 30
+# Note: Silero VAD v6+ requires minimum 32ms chunks
+VAD_CHUNK_DURATION_MS: Final[int] = 32
 
 # Number of samples per VAD chunk
 VAD_CHUNK_SAMPLES: Final[int] = int(AUDIO_SAMPLE_RATE * VAD_CHUNK_DURATION_MS / 1000)
@@ -41,7 +42,7 @@ MIN_SPEECH_DURATION_SECONDS: Final[float] = 0.3
 # VAD (Voice Activity Detection) Configuration
 # =============================================================================
 
-# Silero VAD speech probability threshold (0.0 to 1.0)
+# Speech probability threshold (0.0 to 1.0) - used by all VAD backends
 VAD_SPEECH_THRESHOLD: Final[float] = 0.5
 
 # Number of consecutive speech frames to confirm speech start
@@ -49,6 +50,20 @@ VAD_SPEECH_PAD_FRAMES: Final[int] = 3
 
 # Number of consecutive silence frames to confirm speech end
 VAD_SILENCE_PAD_FRAMES: Final[int] = 10
+
+
+class VADBackendType(str, Enum):
+    """Available VAD backend implementations."""
+
+    SILERO = "silero"  # Silero VAD (PyTorch-based, 32ms chunks)
+    TEN_VAD = "ten_vad"  # TEN VAD (ONNX-based, 10/16ms chunks)
+
+
+# Default VAD backend to use
+DEFAULT_VAD_BACKEND: Final[str] = VADBackendType.SILERO
+
+# TEN VAD specific configuration
+TEN_VAD_HOP_SIZE: Final[int] = 256  # 16ms at 16kHz (options: 160=10ms, 256=16ms)
 
 
 # =============================================================================
