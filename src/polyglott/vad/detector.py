@@ -4,8 +4,6 @@ This module provides real-time voice activity detection for
 identifying when a user is speaking during conversation.
 """
 
-from dataclasses import dataclass
-from enum import Enum
 from typing import Optional
 
 import numpy as np
@@ -14,38 +12,14 @@ import torch
 from polyglott.constants import (
     AUDIO_SAMPLE_RATE,
     VAD_CHUNK_DURATION_MS,
-    VAD_CHUNK_SAMPLES,
     VAD_SILENCE_PAD_FRAMES,
     VAD_SPEECH_PAD_FRAMES,
     VAD_SPEECH_THRESHOLD,
 )
+from polyglott.vad.base import BaseVADDetector, SpeechState, VADResult
 
 
-class SpeechState(str, Enum):
-    """Current state of speech detection."""
-
-    SILENCE = "silence"
-    SPEECH_START = "speech_start"
-    SPEAKING = "speaking"
-    SPEECH_END = "speech_end"
-
-
-@dataclass
-class VADResult:
-    """Result from processing an audio chunk.
-
-    Attributes:
-        speech_probability: Probability of speech in the chunk (0.0-1.0).
-        is_speech: Whether the chunk contains speech above threshold.
-        state: Current speech state in the conversation.
-    """
-
-    speech_probability: float
-    is_speech: bool
-    state: SpeechState
-
-
-class VoiceActivityDetector:
+class VoiceActivityDetector(BaseVADDetector):
     """Real-time voice activity detector using Silero VAD.
 
     This class provides streaming voice activity detection for
@@ -64,6 +38,9 @@ class VoiceActivityDetector:
         ...         # Process complete utterance
         ...         pass
     """
+
+    # Silero VAD v6+ requires minimum 32ms chunks
+    CHUNK_DURATION_MS = 32
 
     def __init__(
         self,
@@ -86,15 +63,14 @@ class VoiceActivityDetector:
         if sample_rate not in (8000, 16000):
             raise ValueError(f"Sample rate must be 8000 or 16000, got {sample_rate}")
 
-        self.sample_rate = sample_rate
-        self.threshold = threshold
-        self.speech_pad_frames = speech_pad_frames
-        self.silence_pad_frames = silence_pad_frames
+        super().__init__(
+            sample_rate=sample_rate,
+            threshold=threshold,
+            speech_pad_frames=speech_pad_frames,
+            silence_pad_frames=silence_pad_frames,
+        )
 
         self._model: Optional[torch.jit.ScriptModule] = None
-        self._speech_frame_count = 0
-        self._silence_frame_count = 0
-        self._is_speaking = False
 
     @property
     def model(self) -> torch.jit.ScriptModule:
@@ -123,48 +99,26 @@ class VoiceActivityDetector:
         )
         return model
 
-    def reset(self) -> None:
-        """Reset the detector state for a new utterance."""
+    def _reset_model(self) -> None:
+        """Reset Silero model state."""
         if self._model is not None:
             self._model.reset_states()
-        self._speech_frame_count = 0
-        self._silence_frame_count = 0
-        self._is_speaking = False
 
-    def process_chunk(self, audio_chunk: np.ndarray) -> VADResult:
-        """Process an audio chunk and detect voice activity.
+    def _get_expected_samples(self) -> int:
+        """Get expected samples for Silero VAD (32ms chunks)."""
+        return int(self._sample_rate * self.CHUNK_DURATION_MS / 1000)
+
+    def _get_speech_probability(self, audio_chunk: np.ndarray) -> float:
+        """Get speech probability from Silero VAD.
 
         Args:
-            audio_chunk: Audio samples as numpy array. Should be
-                VAD_CHUNK_SAMPLES long (30ms at 16kHz = 480 samples).
+            audio_chunk: Audio samples as numpy array.
 
         Returns:
-            VADResult with speech probability, detection flag, and state.
-
-        Raises:
-            ValueError: If audio_chunk has wrong shape.
+            Speech probability (0.0-1.0).
         """
-        expected_samples = int(self.sample_rate * VAD_CHUNK_DURATION_MS / 1000)
-        if len(audio_chunk) != expected_samples:
-            raise ValueError(
-                f"Expected {expected_samples} samples, got {len(audio_chunk)}"
-            )
-
-        # Convert to tensor
         audio_tensor = self._prepare_audio(audio_chunk)
-
-        # Get speech probability
-        speech_prob = self.model(audio_tensor, self.sample_rate).item()
-        is_speech = speech_prob >= self.threshold
-
-        # Determine state based on frame counts
-        state = self._update_state(is_speech)
-
-        return VADResult(
-            speech_probability=speech_prob,
-            is_speech=is_speech,
-            state=state,
-        )
+        return self.model(audio_tensor, self._sample_rate).item()
 
     def _prepare_audio(self, audio_chunk: np.ndarray) -> torch.Tensor:
         """Prepare audio chunk for the model.
@@ -186,43 +140,6 @@ class VoiceActivityDetector:
 
         return torch.from_numpy(audio_chunk)
 
-    def _update_state(self, is_speech: bool) -> SpeechState:
-        """Update internal state and return current speech state.
-
-        Args:
-            is_speech: Whether current chunk contains speech.
-
-        Returns:
-            Current speech state.
-        """
-        if is_speech:
-            self._speech_frame_count += 1
-            self._silence_frame_count = 0
-        else:
-            self._silence_frame_count += 1
-            self._speech_frame_count = 0
-
-        # Determine state transitions
-        if not self._is_speaking:
-            if self._speech_frame_count >= self.speech_pad_frames:
-                self._is_speaking = True
-                return SpeechState.SPEECH_START
-            return SpeechState.SILENCE
-        else:
-            if self._silence_frame_count >= self.silence_pad_frames:
-                self._is_speaking = False
-                return SpeechState.SPEECH_END
-            return SpeechState.SPEAKING
-
-    @property
-    def is_speaking(self) -> bool:
-        """Check if currently in speaking state.
-
-        Returns:
-            True if user is currently speaking.
-        """
-        return self._is_speaking
-
     @staticmethod
     def get_chunk_samples(sample_rate: int = AUDIO_SAMPLE_RATE) -> int:
         """Get the number of samples per VAD chunk.
@@ -231,9 +148,13 @@ class VoiceActivityDetector:
             sample_rate: Audio sample rate in Hz.
 
         Returns:
-            Number of samples per 30ms chunk.
+            Number of samples per 32ms chunk.
         """
         return int(sample_rate * VAD_CHUNK_DURATION_MS / 1000)
+
+
+# Alias for backward compatibility
+SileroVadDetector = VoiceActivityDetector
 
 
 def create_vad_detector(

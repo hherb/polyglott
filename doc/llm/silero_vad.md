@@ -1,8 +1,10 @@
 # Silero VAD API Reference
 
-**Version:** 5.1+
+**Version:** 6.0+
 **License:** MIT
 **Repository:** https://github.com/snakers4/silero-vad
+
+> **Note:** Silero VAD v6+ requires minimum 32ms audio chunks (512 samples at 16kHz).
 
 ## Installation
 
@@ -63,7 +65,7 @@ def process_chunk(audio_chunk: torch.Tensor) -> float:
     """Process a single audio chunk and return speech probability.
 
     Args:
-        audio_chunk: Audio tensor, should be 30ms at 16kHz (480 samples)
+        audio_chunk: Audio tensor, should be 32ms at 16kHz (512 samples)
 
     Returns:
         Speech probability between 0.0 and 1.0
@@ -90,8 +92,9 @@ def process_chunk(audio_chunk: torch.Tensor) -> float:
 ## Performance Characteristics
 
 - **Model size:** ~2MB
-- **Processing time:** <1ms per 30ms audio chunk on CPU
+- **Processing time:** <1ms per 32ms audio chunk on CPU
 - **Supported sample rates:** 8000 Hz, 16000 Hz
+- **Minimum chunk size:** 32ms (512 samples at 16kHz)
 - **Languages:** Trained on 6000+ languages
 
 ## State Management
