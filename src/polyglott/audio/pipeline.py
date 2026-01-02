@@ -210,10 +210,14 @@ class AudioPipeline:
         turn.user_audio = recording.audio
 
         # Step 2: Transcribe
+        # Students mix their native language with target language attempts.
+        # Use language=None to enable auto-detection where supported (Whisper),
+        # or fall back to native language for backends that require a hint (Moonshine).
         self._set_state(PipelineState.TRANSCRIBING)
+        native_lang = self.native_language.lower()[:2]
         transcription = self._transcriber.transcribe(
             recording.audio,
-            language=self.target_language.value,
+            language=None,  # Auto-detect for multilingual support
         )
         turn.user_text = transcription.text
 
@@ -321,6 +325,9 @@ class AudioPipeline:
         self._ensure_components()
         turn = ConversationTurn()
 
+        # Get native language code for transcription and TTS
+        native_lang = self.native_language.lower()[:2]
+
         # Define timeouts for each tier
         tier_timeouts = [
             FOLLOWUP_TIER1_TIMEOUT,
@@ -352,11 +359,11 @@ class AudioPipeline:
                 # User spoke! Continue with normal processing
                 turn.user_audio = recording.audio
 
-                # Step 2: Transcribe
+                # Step 2: Transcribe with auto-detection for multilingual support
                 self._set_state(PipelineState.TRANSCRIBING)
                 transcription = self._transcriber.transcribe(
                     recording.audio,
-                    language=self.target_language.value,
+                    language=None,  # Auto-detect
                 )
                 turn.user_text = transcription.text
 
