@@ -210,10 +210,14 @@ class AudioPipeline:
         turn.user_audio = recording.audio
 
         # Step 2: Transcribe
+        # Students mix their native language with target language attempts.
+        # Use language=None to enable auto-detection where supported (Whisper),
+        # or fall back to native language for backends that require a hint (Moonshine).
         self._set_state(PipelineState.TRANSCRIBING)
+        native_lang = self.native_language.lower()[:2]
         transcription = self._transcriber.transcribe(
             recording.audio,
-            language=self.target_language.value,
+            language=None,  # Auto-detect for multilingual support
         )
         turn.user_text = transcription.text
 
@@ -242,10 +246,14 @@ class AudioPipeline:
                 self.on_tutor_text(turn.tutor_text)
 
         # Step 4: Synthesize and play (with optional barge-in support)
+        # Use multilingual synthesis to handle language-tagged text correctly
+        # The tutor speaks in native language by default, with target language
+        # words wrapped in <lang:XX>...</lang> tags for proper pronunciation
         self._set_state(PipelineState.SPEAKING)
-        synthesis = self._synthesizer.synthesize(
+        native_lang = self.native_language.lower()[:2]
+        synthesis = self._synthesizer.synthesize_multilingual(
             turn.tutor_text,
-            language=self.target_language.value,
+            default_language=native_lang,
         )
         turn.tutor_audio = synthesis.audio
 
@@ -276,15 +284,24 @@ class AudioPipeline:
     def speak(self, text: str, language: Optional[str] = None) -> None:
         """Synthesize and speak text.
 
+        Supports language-tagged text for bilingual output. If the text
+        contains <lang:XX>...</lang> tags, each segment will be spoken
+        with the appropriate voice.
+
         Args:
-            text: Text to speak.
-            language: Language code, or None for target language.
+            text: Text to speak (may contain language tags).
+            language: Default language code, or None for native language.
         """
         self._ensure_components()
-        lang = language or self.target_language.value
+        # Default to native language for explanations, tagged text
+        # will use the appropriate voice automatically
+        native_lang = self.native_language.lower()[:2]
+        default_lang = language or native_lang
 
         self._set_state(PipelineState.SPEAKING)
-        synthesis = self._synthesizer.synthesize(text, language=lang)
+        synthesis = self._synthesizer.synthesize_multilingual(
+            text, default_language=default_lang
+        )
         self._player.play(synthesis.audio, synthesis.sample_rate, blocking=True)
         self._set_state(PipelineState.IDLE)
 
@@ -307,6 +324,9 @@ class AudioPipeline:
         """
         self._ensure_components()
         turn = ConversationTurn()
+
+        # Get native language code for transcription and TTS
+        native_lang = self.native_language.lower()[:2]
 
         # Define timeouts for each tier
         tier_timeouts = [
@@ -339,11 +359,11 @@ class AudioPipeline:
                 # User spoke! Continue with normal processing
                 turn.user_audio = recording.audio
 
-                # Step 2: Transcribe
+                # Step 2: Transcribe with auto-detection for multilingual support
                 self._set_state(PipelineState.TRANSCRIBING)
                 transcription = self._transcriber.transcribe(
                     recording.audio,
-                    language=self.target_language.value,
+                    language=None,  # Auto-detect
                 )
                 turn.user_text = transcription.text
 
@@ -358,10 +378,11 @@ class AudioPipeline:
                 turn.tutor_text = response.text
 
                 # Step 4: Synthesize and play (with barge-in support)
+                # Use multilingual synthesis for proper pronunciation of tagged text
                 self._set_state(PipelineState.SPEAKING)
-                synthesis = self._synthesizer.synthesize(
+                synthesis = self._synthesizer.synthesize_multilingual(
                     turn.tutor_text,
-                    language=self.target_language.value,
+                    default_language=native_lang,
                 )
                 turn.tutor_audio = synthesis.audio
 

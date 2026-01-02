@@ -79,7 +79,9 @@ TEN_VAD_HOP_SIZE: Final[int] = 256  # 16ms at 16kHz (options: 160=10ms, 256=16ms
 MOONSHINE_MODEL_SIZE: Final[str] = "base"
 
 # Default Whisper model size
-WHISPER_MODEL_SIZE: Final[str] = "base"
+# Options: tiny, base, small, medium, large, large-v2, large-v3, large-v3-turbo
+# large-v3-turbo offers near large-v3 quality at much faster speed
+WHISPER_MODEL_SIZE: Final[str] = "large-v3-turbo"
 
 # Maximum audio length for transcription (seconds)
 MAX_TRANSCRIPTION_AUDIO_SECONDS: Final[float] = 30.0

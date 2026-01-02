@@ -50,6 +50,7 @@ class TestTranscriberBackend:
         """Test all expected backends are defined."""
         assert TranscriberBackend.MOONSHINE.value == "moonshine"
         assert TranscriberBackend.WHISPER_MLX.value == "whisper_mlx"
+        assert TranscriberBackend.FASTER_WHISPER.value == "faster_whisper"
 
 
 class TestMoonshineLanguageModels:
@@ -73,20 +74,33 @@ class TestSpeechTranscriber:
     def test_initialization_default(self) -> None:
         """Test transcriber initializes with defaults."""
         transcriber = SpeechTranscriber()
-        assert transcriber.model_size == "base"
+        # Default model_size depends on backend (Whisper: large-v3-turbo, Moonshine: base)
+        assert transcriber.model_size in ["large-v3-turbo", "base"]
         assert transcriber._backend is None
 
     def test_initialization_with_backend(self) -> None:
         """Test transcriber initializes with specific backend."""
         transcriber = SpeechTranscriber(backend=TranscriberBackend.MOONSHINE)
         assert transcriber._backend == TranscriberBackend.MOONSHINE
+        # Moonshine uses base as default
+        assert transcriber.model_size == "base"
+
+    def test_initialization_with_whisper_backend(self) -> None:
+        """Test transcriber uses large-v3-turbo for Whisper backends."""
+        transcriber = SpeechTranscriber(backend=TranscriberBackend.FASTER_WHISPER)
+        assert transcriber._backend == TranscriberBackend.FASTER_WHISPER
+        assert transcriber.model_size == "large-v3-turbo"
 
     def test_supported_backends(self) -> None:
         """Test backend detection does not raise."""
         transcriber = SpeechTranscriber()
         # Should not raise even if backends not installed
         backend = transcriber.backend
-        assert backend in [TranscriberBackend.MOONSHINE, TranscriberBackend.WHISPER_MLX]
+        assert backend in [
+            TranscriberBackend.MOONSHINE,
+            TranscriberBackend.WHISPER_MLX,
+            TranscriberBackend.FASTER_WHISPER,
+        ]
 
 
 class TestCreateTranscriber:

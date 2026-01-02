@@ -1,13 +1,13 @@
 """Tests for Text-to-Speech synthesizer module.
 
 This module tests the TTS synthesis functionality including
-backend selection and audio output.
+backend selection, audio output, and multilingual synthesis.
 """
 
 import numpy as np
 import pytest
 
-from polyglott.constants import TTS_CHILDREN_SPEED, TTS_DEFAULT_SPEED
+from polyglott.constants import TTS_CHILDREN_SPEED, TTS_DEFAULT_SPEED, TTS_SAMPLE_RATE
 from polyglott.tts.synthesizer import (
     KOKORO_LANG_CODES,
     KOKORO_VOICES,
@@ -148,3 +148,122 @@ class TestPiperSynthesizer:
         result = synth.synthesize("", language="de")
         assert isinstance(result, SynthesisResult)
         assert result.duration_seconds == pytest.approx(0.1, rel=0.1)
+
+
+class TestSynthesizeMultilingual:
+    """Tests for synthesize_multilingual method."""
+
+    def test_no_tags_uses_default_language(self) -> None:
+        """Test text without tags uses default language."""
+        synth = SpeechSynthesizer()
+        result = synth.synthesize_multilingual(
+            "Hello, how are you?",
+            default_language="en",
+        )
+        assert isinstance(result, SynthesisResult)
+        assert result.sample_rate == TTS_SAMPLE_RATE
+        assert len(result.audio) > 0
+
+    def test_returns_valid_result(self) -> None:
+        """Test multilingual synthesis returns valid audio."""
+        synth = SpeechSynthesizer()
+        result = synth.synthesize_multilingual(
+            "The word is <lang:de>Hund</lang>.",
+            default_language="en",
+        )
+        assert isinstance(result, SynthesisResult)
+        assert result.audio is not None
+        assert len(result.audio) > 0
+        assert result.duration_seconds > 0
+
+    def test_empty_text_returns_silence(self) -> None:
+        """Test empty text returns short silence."""
+        synth = SpeechSynthesizer()
+        result = synth.synthesize_multilingual(
+            "",
+            default_language="en",
+        )
+        assert isinstance(result, SynthesisResult)
+        assert result.duration_seconds == pytest.approx(0.1, rel=0.1)
+
+    def test_only_whitespace_returns_silence(self) -> None:
+        """Test whitespace-only text returns silence."""
+        synth = SpeechSynthesizer()
+        result = synth.synthesize_multilingual(
+            "   ",
+            default_language="en",
+        )
+        assert isinstance(result, SynthesisResult)
+        assert result.duration_seconds == pytest.approx(0.1, rel=0.1)
+
+    def test_respects_speed_parameter(self) -> None:
+        """Test speed parameter affects synthesis."""
+        synth = SpeechSynthesizer()
+
+        # Synthesize same text at different speeds
+        fast_result = synth.synthesize_multilingual(
+            "Hello world",
+            default_language="en",
+            speed=1.2,
+        )
+        slow_result = synth.synthesize_multilingual(
+            "Hello world",
+            default_language="en",
+            speed=0.8,
+        )
+
+        # Slower speech should have longer duration
+        assert slow_result.duration_seconds > fast_result.duration_seconds
+
+    def test_sample_rate_consistent(self) -> None:
+        """Test output sample rate is consistent across segments."""
+        synth = SpeechSynthesizer()
+        result = synth.synthesize_multilingual(
+            "Say <lang:de>Hallo</lang> and <lang:es>Hola</lang>!",
+            default_language="en",
+        )
+        assert result.sample_rate == TTS_SAMPLE_RATE
+
+    def test_handles_adjacent_tags(self) -> None:
+        """Test adjacent language tags are handled."""
+        synth = SpeechSynthesizer()
+        result = synth.synthesize_multilingual(
+            "<lang:de>Eins</lang><lang:de>zwei</lang><lang:de>drei</lang>",
+            default_language="en",
+        )
+        assert isinstance(result, SynthesisResult)
+        assert len(result.audio) > 0
+
+
+class TestResample:
+    """Tests for the _resample method."""
+
+    def test_same_rate_unchanged(self) -> None:
+        """Test resampling at same rate returns original."""
+        synth = SpeechSynthesizer()
+        audio = np.sin(np.linspace(0, 10, 1000)).astype(np.float32)
+        result = synth._resample(audio, 24000, 24000)
+        np.testing.assert_array_almost_equal(audio, result)
+
+    def test_upsample(self) -> None:
+        """Test upsampling produces more samples."""
+        synth = SpeechSynthesizer()
+        audio = np.sin(np.linspace(0, 10, 1000)).astype(np.float32)
+        result = synth._resample(audio, 22050, 24000)
+        expected_length = int(1000 * 24000 / 22050)
+        assert len(result) == expected_length
+
+    def test_downsample(self) -> None:
+        """Test downsampling produces fewer samples."""
+        synth = SpeechSynthesizer()
+        audio = np.sin(np.linspace(0, 10, 1000)).astype(np.float32)
+        result = synth._resample(audio, 24000, 22050)
+        expected_length = int(1000 * 22050 / 24000)
+        assert len(result) == expected_length
+
+    def test_output_is_float32(self) -> None:
+        """Test resampled audio is float32."""
+        synth = SpeechSynthesizer()
+        audio = np.sin(np.linspace(0, 10, 1000)).astype(np.float32)
+        result = synth._resample(audio, 22050, 24000)
+        assert result.dtype == np.float32

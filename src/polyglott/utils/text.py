@@ -1,11 +1,12 @@
 """Text processing utilities for the language tutor.
 
 This module provides text filtering and cleaning functions
-for preparing text for TTS synthesis.
+for preparing text for TTS synthesis, including language tag
+parsing for bilingual audio output.
 """
 
 import re
-import unicodedata
+from dataclasses import dataclass
 from typing import Final
 
 # Regex pattern for emoji characters (Unicode emoji ranges)
@@ -42,7 +43,10 @@ MARKDOWN_PATTERN: Final[re.Pattern] = re.compile(
 
 # Pattern for action indicators like *smiles*, (laughs), etc.
 # These are non-verbal cues that shouldn't be spoken
-ACTION_WORDS = r"(?:smil|laugh|grin|nod|wav|sigh|gasp|chuckl|wink|giggl|beam|frown|shrug|paus|think|ponder|hug|clap)"
+ACTION_WORDS = (
+    r"(?:smil|laugh|grin|nod|wav|sigh|gasp|chuckl|wink|giggl|"
+    r"beam|frown|shrug|paus|think|ponder|hug|clap)"
+)
 ACTION_PATTERN: Final[re.Pattern] = re.compile(
     rf"\*[^*]*{ACTION_WORDS}[^*]*\*"  # *action with keywords*
     rf"|\([^)]*{ACTION_WORDS}[^)]*\)"  # (action)
@@ -52,6 +56,30 @@ ACTION_PATTERN: Final[re.Pattern] = re.compile(
 
 # Characters that should be removed for cleaner TTS
 REMOVE_CHARS: Final[str] = "~•●○◆◇■□▪▫★☆♠♣♥♦"
+
+# Pattern for language tags: <lang:XX>text</lang> where XX is ISO language code
+# Matches tags like <lang:de>Guten Tag</lang> or <lang:en>Hello</lang>
+LANG_TAG_PATTERN: Final[re.Pattern] = re.compile(
+    r"<lang:([a-z]{2})>(.*?)</lang>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+@dataclass
+class LanguageSegment:
+    """A segment of text with its associated language.
+
+    Attributes:
+        text: The text content of this segment.
+        language: ISO language code (e.g., 'en', 'de', 'es').
+    """
+
+    text: str
+    language: str
+
+    def __post_init__(self) -> None:
+        """Normalize the language code to lowercase."""
+        self.language = self.language.lower()
 
 
 def strip_emojis(text: str) -> str:
@@ -186,3 +214,81 @@ def is_speakable(text: str) -> bool:
     clean = prepare_for_tts(text)
     # Check if any word characters remain
     return bool(re.search(r"\w", clean))
+
+
+def parse_language_tags(text: str, default_language: str = "en") -> list[LanguageSegment]:
+    """Parse text containing language tags into segments.
+
+    Extracts segments tagged with <lang:XX>...</lang> and assigns
+    the default language to untagged portions.
+
+    Args:
+        text: Input text potentially containing language tags.
+        default_language: Language code for untagged text (default: 'en').
+
+    Returns:
+        List of LanguageSegment objects in order of appearance.
+
+    Example:
+        >>> text = "To say hello in German: <lang:de>Guten Tag</lang>"
+        >>> segments = parse_language_tags(text, default_language="en")
+        >>> [(s.language, s.text) for s in segments]
+        [('en', 'To say hello in German:'), ('de', 'Guten Tag')]
+    """
+    segments: list[LanguageSegment] = []
+    last_end = 0
+
+    for match in LANG_TAG_PATTERN.finditer(text):
+        # Add any text before this tag as default language
+        if match.start() > last_end:
+            before_text = text[last_end:match.start()].strip()
+            if before_text:
+                segments.append(LanguageSegment(text=before_text, language=default_language))
+
+        # Add the tagged segment
+        lang_code = match.group(1).lower()
+        tagged_text = match.group(2).strip()
+        if tagged_text:
+            segments.append(LanguageSegment(text=tagged_text, language=lang_code))
+
+        last_end = match.end()
+
+    # Add any remaining text after the last tag
+    if last_end < len(text):
+        remaining_text = text[last_end:].strip()
+        if remaining_text:
+            segments.append(LanguageSegment(text=remaining_text, language=default_language))
+
+    # If no tags found, return entire text as default language
+    if not segments and text.strip():
+        segments.append(LanguageSegment(text=text.strip(), language=default_language))
+
+    return segments
+
+
+def strip_language_tags(text: str) -> str:
+    """Remove language tags from text, keeping only the content.
+
+    Args:
+        text: Text with language tags.
+
+    Returns:
+        Text with tags removed but content preserved.
+
+    Example:
+        >>> strip_language_tags("Say <lang:de>Hallo</lang> to greet.")
+        'Say Hallo to greet.'
+    """
+    return LANG_TAG_PATTERN.sub(r"\2", text)
+
+
+def has_language_tags(text: str) -> bool:
+    """Check if text contains any language tags.
+
+    Args:
+        text: Text to check.
+
+    Returns:
+        True if text contains <lang:XX>...</lang> tags.
+    """
+    return bool(LANG_TAG_PATTERN.search(text))

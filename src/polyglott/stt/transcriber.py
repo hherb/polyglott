@@ -1,16 +1,22 @@
-"""Speech-to-Text transcription using Moonshine ASR.
+"""Speech-to-Text transcription with multiple backend support.
 
 This module provides speech recognition functionality optimized
 for real-time conversational applications with multilingual support.
+
+Backends:
+- Whisper (faster-whisper): Best for multilingual/code-switching, cross-platform
+- Whisper (MLX): Optimized for Apple Silicon Macs
+- Moonshine: Fast, lightweight, good for single-language
 
 Supports both batch and streaming transcription modes for
 optimal latency in different scenarios.
 """
 
+from collections.abc import Generator
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Generator, Optional, Protocol, Union
+from typing import Protocol
 
 import numpy as np
 
@@ -18,7 +24,7 @@ from polyglott.constants import (
     AUDIO_SAMPLE_RATE,
     MAX_TRANSCRIPTION_AUDIO_SECONDS,
     MOONSHINE_MODEL_SIZE,
-    TargetLanguage,
+    WHISPER_MODEL_SIZE,
 )
 
 
@@ -27,6 +33,7 @@ class TranscriberBackend(str, Enum):
 
     MOONSHINE = "moonshine"
     WHISPER_MLX = "whisper_mlx"
+    FASTER_WHISPER = "faster_whisper"
 
 
 @dataclass
@@ -42,8 +49,8 @@ class TranscriptionResult:
 
     text: str
     language: str
-    confidence: Optional[float] = None
-    duration_seconds: Optional[float] = None
+    confidence: float | None = None
+    duration_seconds: float | None = None
 
 
 @dataclass
@@ -66,8 +73,8 @@ class TranscriberProtocol(Protocol):
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text."""
         ...
@@ -140,8 +147,8 @@ class MoonshineTranscriber:
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text.
 
@@ -171,7 +178,7 @@ class MoonshineTranscriber:
     def _transcribe_file(
         self,
         audio_path: str,
-        language: Optional[str],
+        language: str | None,
     ) -> TranscriptionResult:
         """Transcribe an audio file.
 
@@ -194,7 +201,7 @@ class MoonshineTranscriber:
     def _transcribe_array(
         self,
         audio: np.ndarray,
-        language: Optional[str],
+        language: str | None,
     ) -> TranscriptionResult:
         """Transcribe a numpy audio array.
 
@@ -251,7 +258,7 @@ class MoonshineTranscriber:
     def transcribe_streaming(
         self,
         audio_generator: Generator[np.ndarray, None, None],
-        language: Optional[str] = None,
+        language: str | None = None,
         chunk_duration_seconds: float = 1.0,
         overlap_seconds: float = 0.3,
     ) -> Generator[StreamingTranscriptionChunk, None, TranscriptionResult]:
@@ -359,20 +366,45 @@ class WhisperMLXTranscriber:
         Only available on macOS with Apple Silicon.
     """
 
+    # Model name mappings for MLX community models
+    # Some models don't follow the simple whisper-{size}-mlx pattern
+    MLX_MODEL_REPOS: dict[str, str] = {
+        "tiny": "mlx-community/whisper-tiny-mlx",
+        "base": "mlx-community/whisper-base-mlx",
+        "small": "mlx-community/whisper-small-mlx",
+        "medium": "mlx-community/whisper-medium-mlx",
+        "large": "mlx-community/whisper-large-mlx",
+        "large-v2": "mlx-community/whisper-large-v2-mlx",
+        "large-v3": "mlx-community/whisper-large-v3-mlx",
+        "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+    }
+
     def __init__(
         self,
-        model_size: str = "base",
+        model_size: str = "large-v3-turbo",
         sample_rate: int = AUDIO_SAMPLE_RATE,
     ) -> None:
         """Initialize the Whisper MLX transcriber.
 
         Args:
-            model_size: Whisper model size (tiny, base, small, medium, large).
+            model_size: Whisper model size (tiny, base, small, medium, large,
+                       large-v2, large-v3, large-v3-turbo).
             sample_rate: Expected audio sample rate in Hz.
         """
         self.model_size = model_size
         self.sample_rate = sample_rate
         self._mlx_whisper = None
+
+    def _get_model_repo(self) -> str:
+        """Get the HuggingFace repo path for the model.
+
+        Returns:
+            HuggingFace model repository path.
+        """
+        if self.model_size in self.MLX_MODEL_REPOS:
+            return self.MLX_MODEL_REPOS[self.model_size]
+        # Fallback for unknown sizes
+        return f"mlx-community/whisper-{self.model_size}-mlx"
 
     def _ensure_loaded(self) -> None:
         """Ensure mlx_whisper is imported and available."""
@@ -389,14 +421,138 @@ class WhisperMLXTranscriber:
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text using Whisper.
 
         Args:
             audio: Audio data as numpy array, or path to audio file.
-            language: Optional language code.
+            language: Optional language code (None for auto-detection).
+
+        Returns:
+            TranscriptionResult with transcribed text.
+        """
+        self._ensure_loaded()
+
+        temp_file_path: str | None = None
+
+        try:
+            # Handle file path
+            if isinstance(audio, (Path, str)):
+                audio_path = str(audio)
+            else:
+                # For array input, we need to save temporarily
+                # This is a limitation of mlx-whisper
+                import tempfile
+
+                import soundfile as sf
+
+                fd, temp_file_path = tempfile.mkstemp(suffix=".wav")
+                import os
+                os.close(fd)  # Close the file descriptor
+                sf.write(temp_file_path, audio, self.sample_rate)
+                audio_path = temp_file_path
+
+            result = self._mlx_whisper.transcribe(
+                audio_path,
+                path_or_hf_repo=self._get_model_repo(),
+                language=language,  # None enables auto-detection
+            )
+
+            return TranscriptionResult(
+                text=result.get("text", "").strip(),
+                language=result.get("language", language or "en"),
+            )
+        finally:
+            # Clean up temp file if created
+            if temp_file_path is not None:
+                import contextlib
+                import os
+                with contextlib.suppress(OSError):
+                    os.unlink(temp_file_path)
+
+
+class FasterWhisperTranscriber:
+    """Speech transcriber using faster-whisper.
+
+    This transcriber uses CTranslate2-optimized Whisper models for
+    fast inference on CPU and GPU (CUDA). Works on Linux, Windows, and macOS.
+
+    Note:
+        Requires faster-whisper package: uv add faster-whisper
+    """
+
+    # Model name mappings for Hugging Face models
+    MODEL_NAMES: dict[str, str] = {
+        "tiny": "tiny",
+        "base": "base",
+        "small": "small",
+        "medium": "medium",
+        "large": "large-v2",
+        "large-v2": "large-v2",
+        "large-v3": "large-v3",
+        "large-v3-turbo": "large-v3-turbo",
+    }
+
+    def __init__(
+        self,
+        model_size: str = "large-v3-turbo",
+        sample_rate: int = AUDIO_SAMPLE_RATE,
+        device: str = "auto",
+        compute_type: str = "auto",
+    ) -> None:
+        """Initialize the faster-whisper transcriber.
+
+        Args:
+            model_size: Whisper model size (tiny, base, small, medium, large,
+                       large-v2, large-v3, large-v3-turbo).
+            sample_rate: Expected audio sample rate in Hz.
+            device: Device to use ('auto', 'cpu', 'cuda').
+            compute_type: Compute type ('auto', 'int8', 'float16', 'float32').
+        """
+        self.model_size = model_size
+        self.sample_rate = sample_rate
+        self.device = device
+        self.compute_type = compute_type
+        self._model = None
+
+    def _get_model_name(self) -> str:
+        """Get the model name for faster-whisper.
+
+        Returns:
+            Model name string.
+        """
+        return self.MODEL_NAMES.get(self.model_size, self.model_size)
+
+    def _ensure_loaded(self) -> None:
+        """Ensure faster-whisper model is loaded."""
+        if self._model is None:
+            try:
+                from faster_whisper import WhisperModel
+
+                model_name = self._get_model_name()
+                self._model = WhisperModel(
+                    model_name,
+                    device=self.device,
+                    compute_type=self.compute_type,
+                )
+            except ImportError as e:
+                raise ImportError(
+                    "faster-whisper not installed. "
+                    "Install with: uv add faster-whisper"
+                ) from e
+
+    def transcribe(
+        self,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
+    ) -> TranscriptionResult:
+        """Transcribe audio to text using faster-whisper.
+
+        Args:
+            audio: Audio data as numpy array, or path to audio file.
+            language: Optional language code (None for auto-detection).
 
         Returns:
             TranscriptionResult with transcribed text.
@@ -406,25 +562,31 @@ class WhisperMLXTranscriber:
         # Handle file path
         if isinstance(audio, (Path, str)):
             audio_path = str(audio)
+            segments, info = self._model.transcribe(
+                audio_path,
+                language=language,
+                beam_size=5,
+            )
         else:
-            # For array input, we need to save temporarily
-            # This is a limitation of mlx-whisper
-            import tempfile
-            import soundfile as sf
+            # faster-whisper can handle numpy arrays directly
+            segments, info = self._model.transcribe(
+                audio,
+                language=language,
+                beam_size=5,
+            )
 
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                sf.write(f.name, audio, self.sample_rate)
-                audio_path = f.name
+        # Collect all segments
+        text_parts = []
+        for segment in segments:
+            text_parts.append(segment.text)
 
-        result = self._mlx_whisper.transcribe(
-            audio_path,
-            path_or_hf_repo=f"mlx-community/whisper-{self.model_size}-mlx",
-            language=language,
-        )
+        full_text = " ".join(text_parts).strip()
 
         return TranscriptionResult(
-            text=result.get("text", "").strip(),
-            language=result.get("language", language or "en"),
+            text=full_text,
+            language=info.language if info.language else (language or "en"),
+            confidence=info.language_probability if hasattr(info, 'language_probability') else None,
+            duration_seconds=info.duration if hasattr(info, 'duration') else None,
         )
 
 
@@ -434,26 +596,41 @@ class SpeechTranscriber:
     This class provides a unified interface for speech transcription,
     automatically selecting the best available backend.
 
+    For multilingual/code-switching support, Whisper backends are preferred.
+    For single-language speed, Moonshine may be faster.
+
     Example:
         >>> transcriber = SpeechTranscriber()
-        >>> result = transcriber.transcribe(audio_data, language="en")
+        >>> result = transcriber.transcribe(audio_data, language=None)  # Auto-detect
         >>> print(result.text)
     """
 
     def __init__(
         self,
-        backend: Optional[TranscriberBackend] = None,
-        model_size: str = MOONSHINE_MODEL_SIZE,
+        backend: TranscriberBackend | None = None,
+        model_size: str | None = None,
     ) -> None:
         """Initialize the speech transcriber.
 
         Args:
             backend: Specific backend to use, or None for auto-selection.
-            model_size: Model size for the selected backend.
+            model_size: Model size for the selected backend. If None, uses
+                       WHISPER_MODEL_SIZE for Whisper backends or
+                       MOONSHINE_MODEL_SIZE for Moonshine.
         """
-        self.model_size = model_size
+        self._requested_model_size = model_size
         self._backend = backend
-        self._transcriber: Optional[TranscriberProtocol] = None
+        self._transcriber: TranscriberProtocol | None = None
+
+    @property
+    def model_size(self) -> str:
+        """Get the effective model size based on backend."""
+        if self._requested_model_size:
+            return self._requested_model_size
+        # Use appropriate default based on backend
+        if self._backend == TranscriberBackend.MOONSHINE:
+            return MOONSHINE_MODEL_SIZE
+        return WHISPER_MODEL_SIZE
 
     def _get_transcriber(self) -> TranscriberProtocol:
         """Get or create the transcriber backend.
@@ -470,18 +647,60 @@ class SpeechTranscriber:
 
         if self._backend == TranscriberBackend.MOONSHINE:
             self._transcriber = MoonshineTranscriber(model_size=self.model_size)
-        else:
+        elif self._backend == TranscriberBackend.WHISPER_MLX:
             self._transcriber = WhisperMLXTranscriber(model_size=self.model_size)
+        elif self._backend == TranscriberBackend.FASTER_WHISPER:
+            self._transcriber = FasterWhisperTranscriber(model_size=self.model_size)
+        else:
+            # Fallback to faster-whisper
+            self._transcriber = FasterWhisperTranscriber(model_size=self.model_size)
 
         return self._transcriber
 
     def _detect_best_backend(self) -> TranscriberBackend:
         """Detect the best available transcription backend.
 
+        Prefers Whisper backends for better multilingual/code-switching support.
+        On Apple Silicon, prefers MLX Whisper for hardware optimization.
+
         Returns:
             Best available backend.
         """
-        # Try Moonshine first (preferred for speed)
+        import platform
+        import sys
+
+        # Check if running on Apple Silicon
+        is_apple_silicon = (
+            sys.platform == "darwin" and platform.machine() == "arm64"
+        )
+
+        # On Apple Silicon, prefer MLX Whisper (hardware optimized)
+        if is_apple_silicon:
+            try:
+                import mlx_whisper  # noqa: F401
+
+                return TranscriberBackend.WHISPER_MLX
+            except ImportError:
+                pass
+
+        # Try faster-whisper (cross-platform, good multilingual)
+        try:
+            from faster_whisper import WhisperModel  # noqa: F401
+
+            return TranscriberBackend.FASTER_WHISPER
+        except ImportError:
+            pass
+
+        # Try MLX Whisper as fallback on non-Apple Silicon Macs
+        if not is_apple_silicon:
+            try:
+                import mlx_whisper  # noqa: F401
+
+                return TranscriberBackend.WHISPER_MLX
+            except ImportError:
+                pass
+
+        # Fall back to Moonshine (fast but single-language focused)
         try:
             import moonshine_onnx  # noqa: F401
 
@@ -489,21 +708,13 @@ class SpeechTranscriber:
         except ImportError:
             pass
 
-        # Try MLX Whisper (macOS only)
-        try:
-            import mlx_whisper  # noqa: F401
-
-            return TranscriberBackend.WHISPER_MLX
-        except ImportError:
-            pass
-
-        # Default to Moonshine (will fail with helpful message if not installed)
-        return TranscriberBackend.MOONSHINE
+        # Default to faster-whisper (will fail with helpful message if not installed)
+        return TranscriberBackend.FASTER_WHISPER
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text.
 
@@ -520,7 +731,7 @@ class SpeechTranscriber:
     def transcribe_streaming(
         self,
         audio_generator: Generator[np.ndarray, None, None],
-        language: Optional[str] = None,
+        language: str | None = None,
         chunk_duration_seconds: float = 1.0,
     ) -> Generator[StreamingTranscriptionChunk, None, TranscriptionResult]:
         """Transcribe audio in a streaming fashion.
@@ -578,7 +789,7 @@ class SpeechTranscriber:
 
 
 def create_transcriber(
-    language: Optional[str] = None,
+    language: str | None = None,
     prefer_speed: bool = True,
 ) -> SpeechTranscriber:
     """Factory function to create a configured transcriber.

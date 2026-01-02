@@ -19,9 +19,25 @@ Key guidelines:
 - Use lots of positive reinforcement ("Great job!", "Well done!", "You're learning so fast!")
 - If the child seems confused, simplify and try a different approach
 - Introduce new words gradually, one or two at a time
-- Always provide pronunciation hints in parentheses when teaching new words
+
+IMPORTANT - Language tagging for pronunciation:
+When you include words or phrases in {target_language}, wrap them in language tags so they are pronounced correctly.
+Use this format: <lang:{target_language_code}>word or phrase</lang>
+
+Examples:
+- "To say hello, you can say: <lang:{target_language_code}>Guten Tag</lang>"
+- "The word for dog is <lang:{target_language_code}>Hund</lang>. Can you say <lang:{target_language_code}>Hund</lang>?"
+- "Great job! <lang:{target_language_code}>Sehr gut!</lang>"
+
+Always use language tags when speaking {target_language} words so the child hears correct pronunciation.
+Do NOT include pronunciation hints in parentheses - the audio will pronounce it correctly.
 
 The child's native language is {native_language}.
+
+Understanding student speech:
+The child will mostly speak in {native_language}, sometimes attempting {target_language} words or phrases.
+Their attempts may be transcribed phonetically based on how they sound (e.g., "gooten tog" for "Guten Tag").
+Recognize and praise these attempts, then model the correct pronunciation using language tags.
 
 Current lesson focus: {lesson_focus}
 
@@ -121,6 +137,7 @@ def build_system_prompt(
 
     return BASE_TUTOR_PROMPT.format(
         target_language=target_name,
+        target_language_code=target_language.value,
         native_language=native_language,
         age_description=age_description,
         lesson_focus=lesson_focus,

@@ -59,6 +59,11 @@ macos = [
     "mlx-whisper>=0.1.0",
 ]
 
+# Cross-platform Whisper support (recommended for multilingual)
+whisper = [
+    "faster-whisper>=1.0.0",
+]
+
 [project.scripts]
 polyglott = "polyglott.cli:main"
 polyglott-gui = "polyglott.gui.app:main"
@@ -93,3 +98,8 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
