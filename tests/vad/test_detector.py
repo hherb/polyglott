@@ -105,7 +105,7 @@ class TestVoiceActivityDetector:
         samples_16k = VoiceActivityDetector.get_chunk_samples(16000)
         samples_8k = VoiceActivityDetector.get_chunk_samples(8000)
 
-        assert samples_16k == 512  # 32ms at 16kHz
+        assert samples_16k == 512  # 32ms at 16kHz (min required by Silero)
         assert samples_8k == 256   # 32ms at 8kHz
 
     def test_inherits_base_detector(self) -> None:

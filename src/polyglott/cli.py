@@ -6,13 +6,7 @@ language tutoring application.
 
 import argparse
 import sys
-import warnings
 from typing import Optional
-
-# Suppress noisy warnings from TTS dependencies
-warnings.filterwarnings("ignore", message=".*dropout option adds dropout.*")
-warnings.filterwarnings("ignore", message=".*weight_norm is deprecated.*")
-warnings.filterwarnings("ignore", message=".*Defaulting repo_id.*")
 
 from polyglott.constants import (
     APP_NAME,

@@ -12,5 +12,13 @@ Modules:
     conversation: Conversation flow and tutoring logic
 """
 
+import warnings
+
+# Suppress noisy warnings from TTS/ML dependencies before they're imported
+warnings.filterwarnings("ignore", message=".*dropout option adds dropout.*")
+warnings.filterwarnings("ignore", message=".*weight_norm is deprecated.*")
+warnings.filterwarnings("ignore", message=".*Defaulting repo_id.*")
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
+
 __version__ = "0.1.0"
 __author__ = "Polyglott Team"

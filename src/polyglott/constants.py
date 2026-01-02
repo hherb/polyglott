@@ -22,7 +22,7 @@ AUDIO_BIT_DEPTH: Final[int] = 16
 AUDIO_CHANNELS: Final[int] = 1
 
 # Duration of audio chunks for VAD processing (milliseconds)
-# Note: Silero VAD v6+ requires minimum 32ms chunks
+# Note: Silero VAD v6+ requires minimum 32ms chunks (512 samples at 16kHz)
 VAD_CHUNK_DURATION_MS: Final[int] = 32
 
 # Number of samples per VAD chunk

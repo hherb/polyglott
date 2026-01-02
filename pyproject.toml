@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     # Audio I/O
     "sounddevice>=0.4.6",
+    "soundfile>=0.12.0",
     "numpy>=1.24.0,<2.4",
 
     # VAD - Silero Voice Activity Detection
@@ -40,6 +41,7 @@ dependencies = [
     # Utilities
     "pydantic>=2.0.0",
     "rich>=13.0.0",
+    "pip>=21.0",  # Required by Kokoro for spaCy model installation
 ]
 
 [project.optional-dependencies]
