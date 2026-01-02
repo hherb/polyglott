@@ -5,13 +5,11 @@ language tutoring application.
 """
 
 import threading
-from typing import Optional
 
 import flet as ft
 
 from polyglott.constants import (
     APP_NAME,
-    APP_VERSION,
     LANGUAGE_NAMES,
     AgeGroup,
     TargetLanguage,
@@ -43,7 +41,6 @@ from polyglott.gui.theme import (
 )
 from polyglott.persistence import (
     UserProfile,
-    get_last_user,
     list_users,
     load_user_profile,
     save_user_profile,
@@ -60,11 +57,11 @@ class PolyglottApp:
             page: Flet page instance.
         """
         self.page = page
-        self.profile: Optional[UserProfile] = None
-        self.target_language: Optional[TargetLanguage] = None
+        self.profile: UserProfile | None = None
+        self.target_language: TargetLanguage | None = None
         self._messages: list[ChatMessage] = []
         self._is_conversation_active = False
-        self._conversation_thread: Optional[threading.Thread] = None
+        self._conversation_thread: threading.Thread | None = None
 
         # Audio components (lazy-loaded)
         self._synthesizer = None
@@ -72,9 +69,9 @@ class PolyglottApp:
         self._manager = None
 
         # UI components
-        self._chat_list: Optional[ft.ListView] = None
-        self._status_indicator: Optional[StatusIndicator] = None
-        self._mic_button: Optional[MicrophoneButton] = None
+        self._chat_list: ft.ListView | None = None
+        self._status_indicator: StatusIndicator | None = None
+        self._mic_button: MicrophoneButton | None = None
 
         self._setup_page()
 
@@ -96,7 +93,6 @@ class PolyglottApp:
         """Show the user selection/welcome screen."""
         # Get existing users
         users = list_users()
-        last_user = get_last_user()
 
         # Create user list
         user_tiles = []
@@ -258,7 +254,8 @@ class PolyglottApp:
             options=[
                 ft.dropdown.Option(
                     key=lang.value,
-                    text=f"{LANGUAGE_ICONS.get(lang.value, '')} {LANGUAGE_NAMES.get(lang.value, lang.value)}",
+                    text=f"{LANGUAGE_ICONS.get(lang.value, '')} "
+                    f"{LANGUAGE_NAMES.get(lang.value, lang.value)}",
                 )
                 for lang in TargetLanguage
             ],
@@ -527,8 +524,9 @@ class PolyglottApp:
         self._is_conversation_active = True
 
         # Show loading message
+        lang_name = LANGUAGE_NAMES.get(self.target_language.value, "")
         self._add_message(
-            f"Hello {self.profile.name}! Let's practice {LANGUAGE_NAMES.get(self.target_language.value, '')} together. "
+            f"Hello {self.profile.name}! Let's practice {lang_name} together. "
             "Tap the microphone and say something!",
             is_user=False,
         )
@@ -569,7 +567,6 @@ class PolyglottApp:
 
     def _process_conversation_turn(self) -> None:
         """Process a single conversation turn."""
-        from polyglott.audio.pipeline import PipelineState
         from polyglott.audio.recorder import AudioRecorder
         from polyglott.llm.tutor import LanguageTutor, TutorConfig
         from polyglott.stt.transcriber import SpeechTranscriber

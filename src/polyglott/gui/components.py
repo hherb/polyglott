@@ -3,8 +3,8 @@
 Contains chat bubbles, buttons, and other UI elements.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 import flet as ft
 
@@ -16,10 +16,9 @@ from polyglott.gui.theme import (
     FONT_SIZE_SMALL,
     LISTENING_COLOR,
     PRIMARY_COLOR,
-    REPLAY_BUTTON_SIZE,
-    SPEAKING_COLOR,
     SPACING_SM,
     SPACING_XS,
+    SPEAKING_COLOR,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
     THINKING_COLOR,
@@ -44,7 +43,7 @@ class ChatMessage:
     text: str
     is_user: bool
     language: str = "en"
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
 
 
 class ChatBubble(ft.Container):
@@ -57,7 +56,7 @@ class ChatBubble(ft.Container):
     def __init__(
         self,
         message: ChatMessage,
-        on_replay: Optional[Callable[[str, str], None]] = None,
+        on_replay: Callable[[str, str], None] | None = None,
     ) -> None:
         """Initialize the chat bubble.
 
@@ -74,7 +73,6 @@ class ChatBubble(ft.Container):
             bg_color = USER_BUBBLE_COLOR
             border_color = USER_BUBBLE_BORDER
             alignment = ft.MainAxisAlignment.END
-            bubble_alignment = ft.alignment.center_right
             border_radius = ft.border_radius.only(
                 top_left=BORDER_RADIUS_BUBBLE,
                 top_right=BORDER_RADIUS_BUBBLE,
@@ -85,7 +83,6 @@ class ChatBubble(ft.Container):
             bg_color = TUTOR_BUBBLE_COLOR
             border_color = TUTOR_BUBBLE_BORDER
             alignment = ft.MainAxisAlignment.START
-            bubble_alignment = ft.alignment.center_left
             border_radius = ft.border_radius.only(
                 top_left=BORDER_RADIUS_BUBBLE,
                 top_right=BORDER_RADIUS_BUBBLE,
@@ -277,7 +274,7 @@ class MicrophoneButton(ft.Container):
 
     def __init__(
         self,
-        on_click: Optional[Callable[[], None]] = None,
+        on_click: Callable[[], None] | None = None,
         size: int = 80,
     ) -> None:
         """Initialize the microphone button.
@@ -372,7 +369,7 @@ class WelcomeCard(ft.Container):
         self,
         user_name: str,
         language: str,
-        on_start: Optional[Callable[[], None]] = None,
+        on_start: Callable[[], None] | None = None,
     ) -> None:
         """Initialize the welcome card.
 
