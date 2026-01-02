@@ -54,8 +54,9 @@ class TestTutorConfig:
 
     def test_defaults(self) -> None:
         """Test config has sensible defaults."""
+        from polyglott.constants import DEFAULT_LLM_MODEL
         config = TutorConfig()
-        assert config.model == "qwen2.5:7b"
+        assert config.model == DEFAULT_LLM_MODEL
         assert config.target_language == TargetLanguage.SPANISH
         assert config.age_group == AgeGroup.EARLY_PRIMARY
 

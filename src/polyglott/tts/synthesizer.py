@@ -18,6 +18,7 @@ from polyglott.constants import (
     TTS_SAMPLE_RATE,
     TargetLanguage,
 )
+from polyglott.utils.text import prepare_for_tts
 
 
 class TTSBackend(str, Enum):
@@ -356,6 +357,7 @@ class SpeechSynthesizer:
         text: str,
         language: str = "en",
         speed: Optional[float] = None,
+        clean_text: bool = True,
     ) -> SynthesisResult:
         """Synthesize text to speech.
 
@@ -363,10 +365,15 @@ class SpeechSynthesizer:
             text: Text to synthesize.
             language: ISO language code (en, de, es, ja, zh).
             speed: Speech speed, or None for default.
+            clean_text: If True, filter out emojis and non-speakable content.
 
         Returns:
             SynthesisResult with audio data.
         """
+        # Clean text before synthesis (remove emojis, markdown, etc.)
+        if clean_text:
+            text = prepare_for_tts(text)
+
         speed = speed or self.speed
         backend, _ = self._get_backend(language)
         return backend.synthesize(text, language=language, speed=speed)

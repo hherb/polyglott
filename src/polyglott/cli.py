@@ -332,19 +332,42 @@ def run_voice_mode(
         age_group: Student's age group.
         student_name: Student's name.
     """
+    import sys
     from polyglott.audio.pipeline import PipelineState
     from polyglott.conversation.manager import ConversationManager
 
+    # Track if we're in streaming mode for display
+    streaming_started = {"user": False, "tutor": False}
+
     def on_state_change(state: PipelineState) -> None:
         """Handle state changes."""
-        state_messages = {
-            PipelineState.LISTENING: "Listening...",
-            PipelineState.TRANSCRIBING: "Processing...",
-            PipelineState.THINKING: "Thinking...",
-            PipelineState.SPEAKING: "Speaking...",
-        }
-        if state in state_messages:
-            print_status(state_messages[state], state.value)
+        nonlocal streaming_started
+
+        # Reset streaming flags on state changes
+        if state == PipelineState.LISTENING:
+            streaming_started["user"] = False
+            streaming_started["tutor"] = False
+            print_status("Listening...", "listening")
+        elif state == PipelineState.TRANSCRIBING:
+            print_status("Processing speech...", "info")
+        elif state == PipelineState.THINKING:
+            # Start tutor line for streaming
+            print(f"\n[Tutor]: ", end="", flush=True)
+            streaming_started["tutor"] = True
+        elif state == PipelineState.SPEAKING:
+            # End tutor streaming line if needed
+            if streaming_started["tutor"]:
+                print()  # Newline after streaming text
+            print_status("Speaking...", "speaking")
+
+    def on_user_text(text: str) -> None:
+        """Display user transcription."""
+        print(f"\n[{student_name}]: {text}")
+
+    def on_tutor_text(chunk: str) -> None:
+        """Display streaming tutor response."""
+        # Print chunk without newline for streaming effect
+        print(chunk, end="", flush=True)
 
     manager = ConversationManager(
         student_name=student_name,
@@ -352,6 +375,8 @@ def run_voice_mode(
         native_language=native_language,
         age_group=age_group,
         on_state_change=on_state_change,
+        on_user_text=on_user_text,
+        on_tutor_text=on_tutor_text,
     )
 
     # Preload all ML models before user interaction starts
@@ -371,6 +396,7 @@ def run_voice_mode(
     except KeyboardInterrupt:
         pass
     finally:
+        print()  # Ensure we're on a new line
         summary = manager.end_session(say_goodbye=True)
         print(f"\n{summary}")
 

@@ -64,6 +64,8 @@ class ConversationTurn:
 
 # Type alias for state change callbacks
 StateCallback = Callable[[PipelineState], None]
+# Type alias for text streaming callbacks
+TextCallback = Callable[[str], None]
 
 
 class AudioPipeline:
@@ -90,6 +92,8 @@ class AudioPipeline:
         native_language: str = "English",
         age_group: AgeGroup = AgeGroup.EARLY_PRIMARY,
         on_state_change: Optional[StateCallback] = None,
+        on_user_text: Optional[TextCallback] = None,
+        on_tutor_text: Optional[TextCallback] = None,
         enable_barge_in: bool = True,
     ) -> None:
         """Initialize the audio pipeline.
@@ -99,12 +103,16 @@ class AudioPipeline:
             native_language: Child's native language.
             age_group: Child's age group for difficulty.
             on_state_change: Callback for state changes.
+            on_user_text: Callback for streaming user transcription text.
+            on_tutor_text: Callback for streaming tutor response text.
             enable_barge_in: Enable barge-in interruption support.
         """
         self.target_language = target_language
         self.native_language = native_language
         self.age_group = age_group
         self.on_state_change = on_state_change
+        self.on_user_text = on_user_text
+        self.on_tutor_text = on_tutor_text
         self.enable_barge_in = enable_barge_in
 
         self._state = PipelineState.IDLE
@@ -170,14 +178,17 @@ class AudioPipeline:
         greeting = self._tutor.reset_conversation()
         return greeting
 
-    def process_turn(self) -> ConversationTurn:
+    def process_turn(self, use_streaming: bool = True) -> ConversationTurn:
         """Process a single conversation turn.
 
         This method:
         1. Records user speech
         2. Transcribes the audio
-        3. Generates a tutor response
+        3. Generates a tutor response (streaming if enabled)
         4. Synthesizes and plays the response (with barge-in support)
+
+        Args:
+            use_streaming: If True, stream LLM response for real-time display.
 
         Returns:
             ConversationTurn with all data from the turn.
@@ -206,14 +217,29 @@ class AudioPipeline:
         )
         turn.user_text = transcription.text
 
+        # Emit user text for display
+        if self.on_user_text and turn.user_text:
+            self.on_user_text(turn.user_text)
+
         if not turn.user_text.strip():
             self._set_state(PipelineState.IDLE)
             return turn
 
-        # Step 3: Generate response
+        # Step 3: Generate response (streaming or non-streaming)
         self._set_state(PipelineState.THINKING)
-        response = self._tutor.respond(turn.user_text)
-        turn.tutor_text = response.text
+
+        if use_streaming and self.on_tutor_text:
+            # Stream LLM response for real-time display
+            full_response = []
+            for chunk in self._tutor.respond_stream(turn.user_text):
+                full_response.append(chunk)
+                self.on_tutor_text(chunk)
+            turn.tutor_text = "".join(full_response)
+        else:
+            response = self._tutor.respond(turn.user_text)
+            turn.tutor_text = response.text
+            if self.on_tutor_text:
+                self.on_tutor_text(turn.tutor_text)
 
         # Step 4: Synthesize and play (with optional barge-in support)
         self._set_state(PipelineState.SPEAKING)
