@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 import numpy as np
 
-from polyglott.constants import TTS_SAMPLE_RATE, VAD_CHUNK_SAMPLES
+from polyglott.constants import TTS_SAMPLE_RATE
 
 if TYPE_CHECKING:
     from polyglott.vad import VoiceActivityDetector

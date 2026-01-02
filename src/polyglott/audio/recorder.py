@@ -254,7 +254,6 @@ class AudioRecorder:
         self._ensure_sounddevice()
         self.vad.reset()
 
-        all_audio: list[np.ndarray] = []
         speech_buffer: list[np.ndarray] = []
         audio_buffer: list[np.ndarray] = []
         speech_detected = False

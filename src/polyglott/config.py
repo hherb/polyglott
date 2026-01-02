@@ -24,7 +24,6 @@ from polyglott.constants import (
     SILENCE_THRESHOLD_SECONDS,
     TTS_DEFAULT_SPEED,
     VAD_SPEECH_THRESHOLD,
-    VADBackendType,
 )
 
 

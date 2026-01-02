@@ -290,7 +290,6 @@ class AudioPipeline:
         ]
 
         current_tier = 0
-        total_wait_time = 0
 
         while current_tier <= max_followup_tier:
             # Calculate timeout for this attempt
