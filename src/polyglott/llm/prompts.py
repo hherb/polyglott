@@ -4,7 +4,7 @@ This module contains all the prompts used by the LLM to guide
 language learning conversations with children.
 """
 
-from typing import Final
+from typing import Final, Optional
 
 from polyglott.constants import AgeGroup, TargetLanguage
 
@@ -159,6 +159,51 @@ CONVERSATION_STARTERS: Final[dict[str, str]] = {
     "de": "Hallo! Bist du bereit, heute etwas {language} zu lernen? Lass uns Spaß haben!",
 }
 
+# Follow-up prompts when user is silent (tiered by urgency)
+# Level 1: Gentle check-in (after ~10 seconds of silence)
+FOLLOWUP_TIER1: Final[dict[str, list[str]]] = {
+    "en": [
+        "Are you still there?",
+        "Take your time, I'm here when you're ready!",
+        "No rush! Just let me know when you want to continue.",
+    ],
+    "de": [
+        "Bist du noch da?",
+        "Lass dir Zeit, ich bin hier wenn du bereit bist!",
+        "Kein Stress! Sag mir einfach, wenn du weitermachen möchtest.",
+    ],
+}
+
+# Level 2: Encouraging prompt (after ~20 seconds)
+FOLLOWUP_TIER2: Final[dict[str, list[str]]] = {
+    "en": [
+        "Would you like to try something different?",
+        "Do you want me to repeat that?",
+        "Would you like a hint?",
+        "Should we practice something else?",
+    ],
+    "de": [
+        "Möchtest du etwas anderes versuchen?",
+        "Soll ich das wiederholen?",
+        "Möchtest du einen Hinweis?",
+        "Sollen wir etwas anderes üben?",
+    ],
+}
+
+# Level 3: Re-engagement (after ~30 seconds)
+FOLLOWUP_TIER3: Final[dict[str, list[str]]] = {
+    "en": [
+        "Let's try a fun game! Can you say 'hello' in {language}?",
+        "How about we count to five in {language}? One, two...",
+        "Can you tell me your favorite color in {language}?",
+    ],
+    "de": [
+        "Lass uns ein lustiges Spiel spielen! Kannst du 'Hallo' auf {language} sagen?",
+        "Wie wäre es, wenn wir bis fünf auf {language} zählen? Eins, zwei...",
+        "Kannst du mir deine Lieblingsfarbe auf {language} sagen?",
+    ],
+}
+
 
 def get_conversation_starter(
     native_language: str,
@@ -181,3 +226,163 @@ def get_conversation_starter(
         CONVERSATION_STARTERS["en"],
     )
     return template.format(language=target_name)
+
+
+# Time-based greeting templates
+TIME_GREETINGS: Final[dict[str, dict[str, str]]] = {
+    "en": {
+        "morning": "Good morning",
+        "afternoon": "Good afternoon",
+        "evening": "Good evening",
+    },
+    "de": {
+        "morning": "Guten Morgen",
+        "afternoon": "Guten Tag",
+        "evening": "Guten Abend",
+    },
+}
+
+# Returning user greeting templates
+RETURNING_USER_GREETINGS: Final[dict[str, list[str]]] = {
+    "en": [
+        "Welcome back, {name}! Great to see you again!",
+        "Hey {name}! Ready for more {language} practice?",
+        "{name}! So happy you're back! Let's continue learning!",
+    ],
+    "de": [
+        "Willkommen zurück, {name}! Schön dich wiederzusehen!",
+        "Hey {name}! Bereit für mehr {language} Übung?",
+        "{name}! So schön, dass du wieder da bist! Lass uns weiterlernen!",
+    ],
+}
+
+# First time user greeting templates
+NEW_USER_GREETINGS: Final[dict[str, list[str]]] = {
+    "en": [
+        "Hello {name}! I'm so excited to meet you! Let's learn {language} together!",
+        "Hi {name}! Welcome to your first {language} adventure!",
+        "Hey there, {name}! Ready to become a {language} superstar?",
+    ],
+    "de": [
+        "Hallo {name}! Ich freue mich so, dich kennenzulernen! Lass uns zusammen {language} lernen!",
+        "Hi {name}! Willkommen zu deinem ersten {language}-Abenteuer!",
+        "Hey {name}! Bereit, ein {language}-Superstar zu werden?",
+    ],
+}
+
+# Session continuation greetings (when resuming a session)
+CONTINUE_SESSION_GREETINGS: Final[dict[str, list[str]]] = {
+    "en": [
+        "Welcome back, {name}! Last time we were learning about {topic}. Want to continue?",
+        "Hey {name}! Ready to pick up where we left off with {topic}?",
+        "{name}! Let's continue our {topic} adventure!",
+    ],
+    "de": [
+        "Willkommen zurück, {name}! Letztes Mal haben wir {topic} gelernt. Möchtest du weitermachen?",
+        "Hey {name}! Bereit, bei {topic} weiterzumachen?",
+        "{name}! Lass uns unser {topic}-Abenteuer fortsetzen!",
+    ],
+}
+
+
+def _get_time_of_day() -> str:
+    """Get the current time of day.
+
+    Returns:
+        One of 'morning', 'afternoon', or 'evening'.
+    """
+    from datetime import datetime
+    hour = datetime.now().hour
+
+    if 5 <= hour < 12:
+        return "morning"
+    elif 12 <= hour < 17:
+        return "afternoon"
+    else:
+        return "evening"
+
+
+def get_contextual_greeting(
+    student_name: str,
+    native_language: str,
+    target_language: str,
+    is_returning_user: bool = False,
+    total_sessions: int = 0,
+    last_topic: Optional[str] = None,
+) -> str:
+    """Get a contextual greeting based on time, user history, and context.
+
+    Args:
+        student_name: Name of the student.
+        native_language: Child's native language code.
+        target_language: Language being learned.
+        is_returning_user: Whether this is a returning user.
+        total_sessions: Number of previous sessions.
+        last_topic: Last lesson topic (for session continuation).
+
+    Returns:
+        Personalized greeting string.
+    """
+    import random
+    from polyglott.constants import LANGUAGE_NAMES
+
+    target_name = LANGUAGE_NAMES.get(target_language, target_language)
+    lang_code = native_language[:2].lower()
+
+    # Get time-based greeting prefix
+    time_of_day = _get_time_of_day()
+    time_greetings = TIME_GREETINGS.get(lang_code, TIME_GREETINGS["en"])
+    time_greeting = time_greetings.get(time_of_day, time_greetings["morning"])
+
+    # Select appropriate greeting based on context
+    if last_topic and is_returning_user:
+        # Continuing a session
+        templates = CONTINUE_SESSION_GREETINGS.get(lang_code, CONTINUE_SESSION_GREETINGS["en"])
+        template = random.choice(templates)
+        greeting = template.format(name=student_name, topic=last_topic, language=target_name)
+    elif is_returning_user and total_sessions > 0:
+        # Returning user
+        templates = RETURNING_USER_GREETINGS.get(lang_code, RETURNING_USER_GREETINGS["en"])
+        template = random.choice(templates)
+        greeting = template.format(name=student_name, language=target_name)
+    else:
+        # New user
+        templates = NEW_USER_GREETINGS.get(lang_code, NEW_USER_GREETINGS["en"])
+        template = random.choice(templates)
+        greeting = template.format(name=student_name, language=target_name)
+
+    # Combine time greeting with main greeting
+    return f"{time_greeting}, {greeting}"
+
+
+def get_followup_prompt(
+    tier: int,
+    native_language: str,
+    target_language: str,
+) -> str:
+    """Get a follow-up prompt for re-engaging a silent user.
+
+    Args:
+        tier: Urgency tier (1-3, higher = more engaging).
+        native_language: Child's native language code.
+        target_language: Language being learned (for formatting).
+
+    Returns:
+        Follow-up prompt string.
+    """
+    import random
+    from polyglott.constants import LANGUAGE_NAMES
+
+    target_name = LANGUAGE_NAMES.get(target_language, target_language)
+
+    tier_prompts = {
+        1: FOLLOWUP_TIER1,
+        2: FOLLOWUP_TIER2,
+        3: FOLLOWUP_TIER3,
+    }
+
+    prompts_dict = tier_prompts.get(tier, FOLLOWUP_TIER1)
+    prompts = prompts_dict.get(native_language, prompts_dict.get("en", ["Are you there?"]))
+
+    prompt = random.choice(prompts)
+    return prompt.format(language=target_name)

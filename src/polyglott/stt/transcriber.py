@@ -2,12 +2,15 @@
 
 This module provides speech recognition functionality optimized
 for real-time conversational applications with multilingual support.
+
+Supports both batch and streaming transcription modes for
+optimal latency in different scenarios.
 """
 
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Protocol, Union
+from typing import Generator, Optional, Protocol, Union
 
 import numpy as np
 
@@ -41,6 +44,21 @@ class TranscriptionResult:
     language: str
     confidence: Optional[float] = None
     duration_seconds: Optional[float] = None
+
+
+@dataclass
+class StreamingTranscriptionChunk:
+    """A chunk of streaming transcription output.
+
+    Attributes:
+        text: Partial transcribed text so far.
+        is_final: Whether this is the final result.
+        audio_position_seconds: Position in audio stream.
+    """
+
+    text: str
+    is_final: bool = False
+    audio_position_seconds: float = 0.0
 
 
 class TranscriberProtocol(Protocol):
@@ -230,6 +248,106 @@ class MoonshineTranscriber:
 
         return audio
 
+    def transcribe_streaming(
+        self,
+        audio_generator: Generator[np.ndarray, None, None],
+        language: Optional[str] = None,
+        chunk_duration_seconds: float = 1.0,
+        overlap_seconds: float = 0.3,
+    ) -> Generator[StreamingTranscriptionChunk, None, TranscriptionResult]:
+        """Transcribe audio in a streaming fashion.
+
+        Processes audio chunks as they arrive, yielding partial
+        transcription results for lower perceived latency.
+
+        Args:
+            audio_generator: Generator yielding audio chunks.
+            language: Language code for transcription.
+            chunk_duration_seconds: Duration of each processing window.
+            overlap_seconds: Overlap between windows for continuity.
+
+        Yields:
+            StreamingTranscriptionChunk with partial results.
+
+        Returns:
+            Final TranscriptionResult with complete text.
+        """
+        self._ensure_loaded()
+
+        # Collect audio chunks
+        audio_buffer = []
+        chunk_samples = int(chunk_duration_seconds * self.sample_rate)
+        overlap_samples = int(overlap_seconds * self.sample_rate)
+        last_text = ""
+        total_duration = 0.0
+
+        for audio_chunk in audio_generator:
+            audio_buffer.append(audio_chunk)
+            total_samples = sum(len(c) for c in audio_buffer)
+
+            # Process when we have enough audio
+            if total_samples >= chunk_samples:
+                # Concatenate buffer
+                full_audio = np.concatenate(audio_buffer)
+                audio_to_process = self._prepare_audio(full_audio)
+
+                # Transcribe current buffer
+                try:
+                    model = self._get_model_for_language(language or "en")
+                    result = self._moonshine.transcribe(audio_to_process, model)
+                    current_text = result[0] if result else ""
+
+                    if current_text != last_text:
+                        last_text = current_text
+                        total_duration = len(full_audio) / self.sample_rate
+
+                        yield StreamingTranscriptionChunk(
+                            text=current_text,
+                            is_final=False,
+                            audio_position_seconds=total_duration,
+                        )
+                except Exception:
+                    # Continue on errors
+                    pass
+
+                # Keep overlap for continuity (trim buffer)
+                if len(full_audio) > overlap_samples:
+                    trimmed = full_audio[-overlap_samples:]
+                    audio_buffer = [trimmed]
+
+        # Final transcription of complete audio
+        if audio_buffer:
+            full_audio = np.concatenate(audio_buffer)
+            audio_to_process = self._prepare_audio(full_audio)
+
+            try:
+                model = self._get_model_for_language(language or "en")
+                result = self._moonshine.transcribe(audio_to_process, model)
+                final_text = result[0] if result else ""
+            except Exception:
+                final_text = last_text
+
+            total_duration = len(full_audio) / self.sample_rate
+
+            # Yield final chunk
+            yield StreamingTranscriptionChunk(
+                text=final_text,
+                is_final=True,
+                audio_position_seconds=total_duration,
+            )
+
+            return TranscriptionResult(
+                text=final_text,
+                language=language or "en",
+                duration_seconds=total_duration,
+            )
+
+        return TranscriptionResult(
+            text=last_text,
+            language=language or "en",
+            duration_seconds=total_duration,
+        )
+
 
 class WhisperMLXTranscriber:
     """Speech transcriber using Whisper via MLX.
@@ -398,6 +516,54 @@ class SpeechTranscriber:
         """
         transcriber = self._get_transcriber()
         return transcriber.transcribe(audio, language)
+
+    def transcribe_streaming(
+        self,
+        audio_generator: Generator[np.ndarray, None, None],
+        language: Optional[str] = None,
+        chunk_duration_seconds: float = 1.0,
+    ) -> Generator[StreamingTranscriptionChunk, None, TranscriptionResult]:
+        """Transcribe audio in a streaming fashion.
+
+        Processes audio chunks as they arrive, yielding partial
+        results for lower perceived latency.
+
+        Args:
+            audio_generator: Generator yielding audio chunks.
+            language: Language code for transcription.
+            chunk_duration_seconds: Duration of each processing window.
+
+        Yields:
+            StreamingTranscriptionChunk with partial results.
+
+        Returns:
+            Final TranscriptionResult with complete text.
+        """
+        transcriber = self._get_transcriber()
+
+        # Only Moonshine supports streaming currently
+        if isinstance(transcriber, MoonshineTranscriber):
+            return transcriber.transcribe_streaming(
+                audio_generator,
+                language=language,
+                chunk_duration_seconds=chunk_duration_seconds,
+            )
+        else:
+            # Fall back to collecting all audio and transcribing at once
+            audio_chunks = list(audio_generator)
+            if audio_chunks:
+                full_audio = np.concatenate(audio_chunks)
+                result = transcriber.transcribe(full_audio, language)
+
+                yield StreamingTranscriptionChunk(
+                    text=result.text,
+                    is_final=True,
+                    audio_position_seconds=result.duration_seconds or 0.0,
+                )
+
+                return result
+            else:
+                return TranscriptionResult(text="", language=language or "en")
 
     @property
     def backend(self) -> TranscriberBackend:

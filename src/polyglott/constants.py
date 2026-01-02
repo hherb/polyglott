@@ -37,6 +37,11 @@ SILENCE_THRESHOLD_SECONDS: Final[float] = 1.5
 # Minimum speech duration to process (seconds)
 MIN_SPEECH_DURATION_SECONDS: Final[float] = 0.3
 
+# Follow-up timeouts for AI-initiated prompts (seconds)
+FOLLOWUP_TIER1_TIMEOUT: Final[float] = 10.0  # Gentle check-in
+FOLLOWUP_TIER2_TIMEOUT: Final[float] = 20.0  # Encouraging prompt
+FOLLOWUP_TIER3_TIMEOUT: Final[float] = 30.0  # Re-engagement activity
+
 
 # =============================================================================
 # VAD (Voice Activity Detection) Configuration
