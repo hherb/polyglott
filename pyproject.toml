@@ -25,26 +25,22 @@ dependencies = [
     "sounddevice>=0.4.6",
     "soundfile>=0.12.0",
     "numpy>=1.24.0,<2.4",
-
     # VAD - Silero Voice Activity Detection
     "silero-vad>=5.1",
-
     # STT - Speech to Text (Moonshine for edge, mlx-whisper for Mac)
     "onnxruntime>=1.16.0",
-
     # LLM - Ollama client
     "ollama>=0.3.0",
-
     # TTS - Kokoro (lightweight, multilingual)
     "kokoro>=0.3.0",
-
+    # TTS - Piper (German support)
+    "piper-tts>=1.3.0",
     # GUI - Flet (Flutter-based)
     "flet>=0.25.0",
-
     # Utilities
     "pydantic>=2.0.0",
     "rich>=13.0.0",
-    "pip>=21.0",  # Required by Kokoro for spaCy model installation
+    "pip>=21.0", # Required by Kokoro for spaCy model installation
 ]
 
 [project.optional-dependencies]
@@ -60,11 +56,6 @@ dev = [
 macos = [
     "mlx>=0.5.0",
     "mlx-whisper>=0.1.0",
-]
-
-# Piper TTS for German language support
-piper = [
-    "piper-tts>=1.2.0",
 ]
 
 [project.scripts]

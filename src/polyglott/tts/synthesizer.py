@@ -18,6 +18,7 @@ from polyglott.constants import (
     TTS_SAMPLE_RATE,
     TargetLanguage,
 )
+from polyglott.utils.text import prepare_for_tts
 
 
 class TTSBackend(str, Enum):
@@ -200,18 +201,34 @@ class PiperSynthesizer:
     Piper is a fast, local neural TTS system that supports
     German and many other languages.
 
+    Voice models are automatically downloaded on first use from
+    Hugging Face and cached locally.
+
     Example:
         >>> synth = PiperSynthesizer()
         >>> result = synth.synthesize("Hallo!", language="de")
         >>> play_audio(result.audio, result.sample_rate)
     """
 
-    # Piper voice models for each language
-    PIPER_VOICES: dict[str, str] = {
-        "de": "de_DE-thorsten-high",
-        "en": "en_US-lessac-high",
-        "es": "es_ES-davefx-medium",
+    # Piper voice models for each language (model name -> URL path components)
+    # Format: language/region/voice/quality
+    PIPER_VOICES: dict[str, dict[str, str]] = {
+        "de": {
+            "name": "de_DE-thorsten-high",
+            "path": "de/de_DE/thorsten/high",
+        },
+        "en": {
+            "name": "en_US-lessac-high",
+            "path": "en/en_US/lessac/high",
+        },
+        "es": {
+            "name": "es_ES-davefx-medium",
+            "path": "es/es_ES/davefx/medium",
+        },
     }
+
+    # Base URL for Piper voice models on Hugging Face
+    HF_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
 
     def __init__(self, sample_rate: int = 22050) -> None:
         """Initialize the Piper synthesizer.
@@ -222,6 +239,81 @@ class PiperSynthesizer:
         self.sample_rate = sample_rate
         self._piper = None
         self._voice_cache: dict[str, object] = {}
+        self._cache_dir = self._get_cache_dir()
+
+    def _get_cache_dir(self) -> Path:
+        """Get the cache directory for voice models.
+
+        Returns:
+            Path to cache directory.
+        """
+        # Use XDG_DATA_HOME or fallback to ~/.local/share
+        import os
+        xdg_data = os.environ.get("XDG_DATA_HOME", "")
+        if xdg_data:
+            base = Path(xdg_data)
+        else:
+            base = Path.home() / ".local" / "share"
+
+        cache_dir = base / "piper-voices"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+
+    def _download_voice(self, language: str) -> Path:
+        """Download a voice model if not already cached.
+
+        Args:
+            language: ISO language code.
+
+        Returns:
+            Path to the downloaded .onnx model file.
+
+        Raises:
+            ValueError: If language not supported.
+            RuntimeError: If download fails.
+        """
+        import urllib.request
+        import urllib.error
+
+        voice_info = self.PIPER_VOICES.get(language)
+        if voice_info is None:
+            raise ValueError(
+                f"Language '{language}' not supported by Piper. "
+                f"Supported: {list(self.PIPER_VOICES.keys())}"
+            )
+
+        model_name = voice_info["name"]
+        model_path = voice_info["path"]
+
+        # Check if already downloaded
+        onnx_file = self._cache_dir / f"{model_name}.onnx"
+        json_file = self._cache_dir / f"{model_name}.onnx.json"
+
+        if onnx_file.exists() and json_file.exists():
+            return onnx_file
+
+        # Download model files
+        onnx_url = f"{self.HF_BASE_URL}/{model_path}/{model_name}.onnx"
+        json_url = f"{self.HF_BASE_URL}/{model_path}/{model_name}.onnx.json"
+
+        try:
+            print(f"Downloading Piper voice model: {model_name}...")
+
+            # Download ONNX model
+            if not onnx_file.exists():
+                urllib.request.urlretrieve(onnx_url, onnx_file)
+
+            # Download JSON config
+            if not json_file.exists():
+                urllib.request.urlretrieve(json_url, json_file)
+
+            print(f"Voice model downloaded to: {self._cache_dir}")
+            return onnx_file
+
+        except urllib.error.URLError as e:
+            raise RuntimeError(
+                f"Failed to download Piper voice model '{model_name}': {e}"
+            ) from e
 
     def _ensure_loaded(self) -> None:
         """Ensure Piper is imported and available."""
@@ -234,6 +326,26 @@ class PiperSynthesizer:
                 raise ImportError(
                     "Piper TTS not installed. Install with: uv add piper-tts"
                 ) from e
+
+    def _get_voice(self, language: str) -> object:
+        """Get or load a voice model for a language.
+
+        Args:
+            language: ISO language code.
+
+        Returns:
+            PiperVoice instance.
+        """
+        self._ensure_loaded()
+        from piper import PiperVoice
+
+        if language not in self._voice_cache:
+            # Download model if needed
+            model_path = self._download_voice(language)
+            # Load the voice model
+            self._voice_cache[language] = PiperVoice.load(str(model_path))
+
+        return self._voice_cache[language]
 
     def synthesize(
         self,
@@ -248,13 +360,11 @@ class PiperSynthesizer:
             text: Text to synthesize.
             language: ISO language code.
             speed: Speech speed multiplier.
-            voice: Optional specific voice model name.
+            voice: Optional specific voice model name (not used currently).
 
         Returns:
             SynthesisResult with audio data.
         """
-        self._ensure_loaded()
-
         if not text.strip():
             return SynthesisResult(
                 audio=np.zeros(int(self.sample_rate * 0.1), dtype=np.float32),
@@ -262,27 +372,39 @@ class PiperSynthesizer:
                 duration_seconds=0.1,
             )
 
-        voice_name = voice or self.PIPER_VOICES.get(language, self.PIPER_VOICES["de"])
-
-        # Piper synthesis (simplified - actual implementation may vary)
         try:
-            from piper import PiperVoice
+            from piper.config import SynthesisConfig
 
-            # Get or create voice
-            if voice_name not in self._voice_cache:
-                self._voice_cache[voice_name] = PiperVoice.load(voice_name)
+            piper_voice = self._get_voice(language)
 
-            piper_voice = self._voice_cache[voice_name]
-            # Piper uses length_scale (inverse of speed: smaller = faster)
+            # Piper uses length_scale (larger = slower, smaller = faster)
+            # Since speed > 1 means faster, we invert it
             length_scale = 1.0 / speed if speed > 0 else 1.0
-            audio_data = piper_voice.synthesize(text, length_scale=length_scale)
 
-            audio = np.array(audio_data, dtype=np.float32)
-            duration = len(audio) / self.sample_rate
+            # Create synthesis config with speed adjustment
+            syn_config = SynthesisConfig(length_scale=length_scale)
+
+            # Synthesize audio - returns generator of AudioChunk objects
+            audio_chunks = []
+            actual_sample_rate = self.sample_rate
+
+            for chunk in piper_voice.synthesize(text, syn_config=syn_config):
+                audio_chunks.append(chunk.audio_float_array)
+                actual_sample_rate = chunk.sample_rate
+
+            if not audio_chunks:
+                return SynthesisResult(
+                    audio=np.zeros(int(self.sample_rate * 0.1), dtype=np.float32),
+                    sample_rate=self.sample_rate,
+                    duration_seconds=0.1,
+                )
+
+            audio = np.concatenate(audio_chunks)
+            duration = len(audio) / actual_sample_rate
 
             return SynthesisResult(
                 audio=audio,
-                sample_rate=self.sample_rate,
+                sample_rate=actual_sample_rate,
                 duration_seconds=duration,
             )
         except Exception as e:
@@ -356,6 +478,7 @@ class SpeechSynthesizer:
         text: str,
         language: str = "en",
         speed: Optional[float] = None,
+        clean_text: bool = True,
     ) -> SynthesisResult:
         """Synthesize text to speech.
 
@@ -363,10 +486,15 @@ class SpeechSynthesizer:
             text: Text to synthesize.
             language: ISO language code (en, de, es, ja, zh).
             speed: Speech speed, or None for default.
+            clean_text: If True, filter out emojis and non-speakable content.
 
         Returns:
             SynthesisResult with audio data.
         """
+        # Clean text before synthesis (remove emojis, markdown, etc.)
+        if clean_text:
+            text = prepare_for_tts(text)
+
         speed = speed or self.speed
         backend, _ = self._get_backend(language)
         return backend.synthesize(text, language=language, speed=speed)
