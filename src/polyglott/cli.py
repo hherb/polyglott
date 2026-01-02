@@ -428,6 +428,13 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--gui",
+        "-g",
+        action="store_true",
+        help="Start the graphical user interface",
+    )
+
+    parser.add_argument(
         "--list-users",
         action="store_true",
         help="List saved users and exit",
@@ -459,6 +466,13 @@ def main() -> int:
                 print(f"  - {name}")
         else:
             print("No saved users found.")
+        return 0
+
+    # Handle --gui
+    if args.gui:
+        from polyglott.gui.app import main as gui_main
+
+        gui_main()
         return 0
 
     print_banner()

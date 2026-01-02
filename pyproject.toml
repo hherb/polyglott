@@ -38,6 +38,9 @@ dependencies = [
     # TTS - Kokoro (lightweight, multilingual)
     "kokoro>=0.3.0",
 
+    # GUI - Flet (Flutter-based)
+    "flet>=0.25.0",
+
     # Utilities
     "pydantic>=2.0.0",
     "rich>=13.0.0",
@@ -66,6 +69,7 @@ piper = [
 
 [project.scripts]
 polyglott = "polyglott.cli:main"
+polyglott-gui = "polyglott.gui.app:main"
 
 [build-system]
 requires = ["hatchling"]
