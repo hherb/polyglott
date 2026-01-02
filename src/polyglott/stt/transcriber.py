@@ -12,10 +12,11 @@ Supports both batch and streaming transcription modes for
 optimal latency in different scenarios.
 """
 
+from collections.abc import Generator
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Generator, Optional, Protocol, Union
+from typing import Protocol
 
 import numpy as np
 
@@ -24,7 +25,6 @@ from polyglott.constants import (
     MAX_TRANSCRIPTION_AUDIO_SECONDS,
     MOONSHINE_MODEL_SIZE,
     WHISPER_MODEL_SIZE,
-    TargetLanguage,
 )
 
 
@@ -49,8 +49,8 @@ class TranscriptionResult:
 
     text: str
     language: str
-    confidence: Optional[float] = None
-    duration_seconds: Optional[float] = None
+    confidence: float | None = None
+    duration_seconds: float | None = None
 
 
 @dataclass
@@ -73,8 +73,8 @@ class TranscriberProtocol(Protocol):
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text."""
         ...
@@ -147,8 +147,8 @@ class MoonshineTranscriber:
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text.
 
@@ -178,7 +178,7 @@ class MoonshineTranscriber:
     def _transcribe_file(
         self,
         audio_path: str,
-        language: Optional[str],
+        language: str | None,
     ) -> TranscriptionResult:
         """Transcribe an audio file.
 
@@ -201,7 +201,7 @@ class MoonshineTranscriber:
     def _transcribe_array(
         self,
         audio: np.ndarray,
-        language: Optional[str],
+        language: str | None,
     ) -> TranscriptionResult:
         """Transcribe a numpy audio array.
 
@@ -258,7 +258,7 @@ class MoonshineTranscriber:
     def transcribe_streaming(
         self,
         audio_generator: Generator[np.ndarray, None, None],
-        language: Optional[str] = None,
+        language: str | None = None,
         chunk_duration_seconds: float = 1.0,
         overlap_seconds: float = 0.3,
     ) -> Generator[StreamingTranscriptionChunk, None, TranscriptionResult]:
@@ -421,8 +421,8 @@ class WhisperMLXTranscriber:
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text using Whisper.
 
@@ -435,29 +435,42 @@ class WhisperMLXTranscriber:
         """
         self._ensure_loaded()
 
-        # Handle file path
-        if isinstance(audio, (Path, str)):
-            audio_path = str(audio)
-        else:
-            # For array input, we need to save temporarily
-            # This is a limitation of mlx-whisper
-            import tempfile
-            import soundfile as sf
+        temp_file_path: str | None = None
 
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                sf.write(f.name, audio, self.sample_rate)
-                audio_path = f.name
+        try:
+            # Handle file path
+            if isinstance(audio, (Path, str)):
+                audio_path = str(audio)
+            else:
+                # For array input, we need to save temporarily
+                # This is a limitation of mlx-whisper
+                import tempfile
 
-        result = self._mlx_whisper.transcribe(
-            audio_path,
-            path_or_hf_repo=self._get_model_repo(),
-            language=language,  # None enables auto-detection
-        )
+                import soundfile as sf
 
-        return TranscriptionResult(
-            text=result.get("text", "").strip(),
-            language=result.get("language", language or "en"),
-        )
+                fd, temp_file_path = tempfile.mkstemp(suffix=".wav")
+                import os
+                os.close(fd)  # Close the file descriptor
+                sf.write(temp_file_path, audio, self.sample_rate)
+                audio_path = temp_file_path
+
+            result = self._mlx_whisper.transcribe(
+                audio_path,
+                path_or_hf_repo=self._get_model_repo(),
+                language=language,  # None enables auto-detection
+            )
+
+            return TranscriptionResult(
+                text=result.get("text", "").strip(),
+                language=result.get("language", language or "en"),
+            )
+        finally:
+            # Clean up temp file if created
+            if temp_file_path is not None:
+                import contextlib
+                import os
+                with contextlib.suppress(OSError):
+                    os.unlink(temp_file_path)
 
 
 class FasterWhisperTranscriber:
@@ -532,8 +545,8 @@ class FasterWhisperTranscriber:
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text using faster-whisper.
 
@@ -594,8 +607,8 @@ class SpeechTranscriber:
 
     def __init__(
         self,
-        backend: Optional[TranscriberBackend] = None,
-        model_size: Optional[str] = None,
+        backend: TranscriberBackend | None = None,
+        model_size: str | None = None,
     ) -> None:
         """Initialize the speech transcriber.
 
@@ -607,7 +620,7 @@ class SpeechTranscriber:
         """
         self._requested_model_size = model_size
         self._backend = backend
-        self._transcriber: Optional[TranscriberProtocol] = None
+        self._transcriber: TranscriberProtocol | None = None
 
     @property
     def model_size(self) -> str:
@@ -700,8 +713,8 @@ class SpeechTranscriber:
 
     def transcribe(
         self,
-        audio: Union[np.ndarray, Path, str],
-        language: Optional[str] = None,
+        audio: np.ndarray | Path | str,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio to text.
 
@@ -718,7 +731,7 @@ class SpeechTranscriber:
     def transcribe_streaming(
         self,
         audio_generator: Generator[np.ndarray, None, None],
-        language: Optional[str] = None,
+        language: str | None = None,
         chunk_duration_seconds: float = 1.0,
     ) -> Generator[StreamingTranscriptionChunk, None, TranscriptionResult]:
         """Transcribe audio in a streaming fashion.
@@ -776,7 +789,7 @@ class SpeechTranscriber:
 
 
 def create_transcriber(
-    language: Optional[str] = None,
+    language: str | None = None,
     prefer_speed: bool = True,
 ) -> SpeechTranscriber:
     """Factory function to create a configured transcriber.

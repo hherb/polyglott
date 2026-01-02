@@ -6,7 +6,6 @@ parsing for bilingual audio output.
 """
 
 import re
-import unicodedata
 from dataclasses import dataclass
 from typing import Final
 
@@ -44,7 +43,10 @@ MARKDOWN_PATTERN: Final[re.Pattern] = re.compile(
 
 # Pattern for action indicators like *smiles*, (laughs), etc.
 # These are non-verbal cues that shouldn't be spoken
-ACTION_WORDS = r"(?:smil|laugh|grin|nod|wav|sigh|gasp|chuckl|wink|giggl|beam|frown|shrug|paus|think|ponder|hug|clap)"
+ACTION_WORDS = (
+    r"(?:smil|laugh|grin|nod|wav|sigh|gasp|chuckl|wink|giggl|"
+    r"beam|frown|shrug|paus|think|ponder|hug|clap)"
+)
 ACTION_PATTERN: Final[re.Pattern] = re.compile(
     rf"\*[^*]*{ACTION_WORDS}[^*]*\*"  # *action with keywords*
     rf"|\([^)]*{ACTION_WORDS}[^)]*\)"  # (action)

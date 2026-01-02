@@ -7,23 +7,19 @@ using Kokoro TTS for most languages and Piper TTS for German.
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Protocol, Union
+from typing import Protocol
 
 import numpy as np
 
 from polyglott.constants import (
     TTS_CHILDREN_SPEED,
     TTS_DEFAULT_SPEED,
-    TTS_LANGUAGE_CODES,
     TTS_SAMPLE_RATE,
-    TargetLanguage,
 )
 from polyglott.utils.text import (
-    LanguageSegment,
     has_language_tags,
     parse_language_tags,
     prepare_for_tts,
-    strip_language_tags,
 )
 
 
@@ -143,7 +139,7 @@ class KokoroSynthesizer:
         text: str,
         language: str = "en",
         speed: float = TTS_DEFAULT_SPEED,
-        voice: Optional[str] = None,
+        voice: str | None = None,
     ) -> SynthesisResult:
         """Synthesize text to speech.
 
@@ -278,8 +274,8 @@ class PiperSynthesizer:
             ValueError: If language not supported.
             RuntimeError: If download fails.
         """
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         voice_info = self.PIPER_VOICES.get(language)
         if voice_info is None:
@@ -358,7 +354,7 @@ class PiperSynthesizer:
         text: str,
         language: str = "de",
         speed: float = TTS_DEFAULT_SPEED,
-        voice: Optional[str] = None,
+        voice: str | None = None,
     ) -> SynthesisResult:
         """Synthesize text to speech.
 
@@ -456,8 +452,8 @@ class SpeechSynthesizer:
             speed: Default speech speed (slower for children).
         """
         self.speed = speed
-        self._kokoro: Optional[KokoroSynthesizer] = None
-        self._piper: Optional[PiperSynthesizer] = None
+        self._kokoro: KokoroSynthesizer | None = None
+        self._piper: PiperSynthesizer | None = None
 
     def _get_backend(self, language: str) -> tuple[SynthesizerProtocol, TTSBackend]:
         """Get appropriate backend for a language.
@@ -483,7 +479,7 @@ class SpeechSynthesizer:
         self,
         text: str,
         language: str = "en",
-        speed: Optional[float] = None,
+        speed: float | None = None,
         clean_text: bool = True,
     ) -> SynthesisResult:
         """Synthesize text to speech.
@@ -509,7 +505,7 @@ class SpeechSynthesizer:
         self,
         text: str,
         default_language: str = "en",
-        speed: Optional[float] = None,
+        speed: float | None = None,
         clean_text: bool = True,
     ) -> SynthesisResult:
         """Synthesize text containing multiple languages with appropriate voices.
@@ -556,6 +552,7 @@ class SpeechSynthesizer:
         # Synthesize each segment with appropriate voice
         audio_chunks: list[np.ndarray] = []
         target_sample_rate = TTS_SAMPLE_RATE
+        pause_samples = int(target_sample_rate * 0.05)  # 50ms pause between segments
 
         for segment in segments:
             # Clean text if requested
@@ -582,11 +579,11 @@ class SpeechSynthesizer:
             else:
                 audio = result.audio
 
-            audio_chunks.append(audio)
+            # Add pause before this segment (except for the first one)
+            if audio_chunks:
+                audio_chunks.append(np.zeros(pause_samples, dtype=np.float32))
 
-            # Add a tiny pause between segments for natural speech flow
-            pause_samples = int(target_sample_rate * 0.05)  # 50ms pause
-            audio_chunks.append(np.zeros(pause_samples, dtype=np.float32))
+            audio_chunks.append(audio)
 
         if not audio_chunks:
             return SynthesisResult(
@@ -634,9 +631,9 @@ class SpeechSynthesizer:
     def synthesize_to_file(
         self,
         text: str,
-        output_path: Union[str, Path],
+        output_path: str | Path,
         language: str = "en",
-        speed: Optional[float] = None,
+        speed: float | None = None,
     ) -> Path:
         """Synthesize text and save to audio file.
 
