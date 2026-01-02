@@ -20,6 +20,8 @@ from polyglott.constants import (
     MIN_SPEECH_DURATION_SECONDS,
     SILENCE_THRESHOLD_SECONDS,
     VAD_CHUNK_SAMPLES,
+    VAD_MAX_SILENCE_BUFFER_CHUNKS,
+    VAD_PRE_SPEECH_BUFFER_CHUNKS,
 )
 from polyglott.vad import VoiceActivityDetector
 from polyglott.vad.detector import SpeechState
@@ -154,8 +156,10 @@ class AudioRecorder:
                         speech_started = True
                         if on_speech_start:
                             on_speech_start()
-                        # Include pre-speech buffer
-                        speech_buffer.extend(audio_buffer[-10:])  # ~300ms lookback
+                        # Include pre-speech buffer to capture first syllables
+                        speech_buffer.extend(
+                            audio_buffer[-VAD_PRE_SPEECH_BUFFER_CHUNKS:]
+                        )
                         speech_buffer.append(chunk)
 
                     elif vad_result.state == SpeechState.SPEAKING:
@@ -171,8 +175,8 @@ class AudioRecorder:
 
                     else:  # SILENCE
                         audio_buffer.append(chunk)
-                        # Keep buffer limited
-                        if len(audio_buffer) > 20:
+                        # Keep buffer limited for pre-speech lookback
+                        if len(audio_buffer) > VAD_MAX_SILENCE_BUFFER_CHUNKS:
                             audio_buffer.pop(0)
 
         finally:
@@ -297,10 +301,14 @@ class AudioRecorder:
                         speech_started = True
                         if on_speech_start:
                             on_speech_start()
-                        # Include pre-speech buffer
-                        speech_buffer.extend(audio_buffer[-10:])
+                        # Include pre-speech buffer to capture first syllables
+                        speech_buffer.extend(
+                            audio_buffer[-VAD_PRE_SPEECH_BUFFER_CHUNKS:]
+                        )
                         speech_buffer.append(chunk)
-                        pending_yield.extend(audio_buffer[-10:])
+                        pending_yield.extend(
+                            audio_buffer[-VAD_PRE_SPEECH_BUFFER_CHUNKS:]
+                        )
                         pending_yield.append(chunk)
 
                     elif vad_result.state == SpeechState.SPEAKING:
@@ -322,7 +330,8 @@ class AudioRecorder:
 
                     else:  # SILENCE
                         audio_buffer.append(chunk)
-                        if len(audio_buffer) > 20:
+                        # Keep buffer limited for pre-speech lookback
+                        if len(audio_buffer) > VAD_MAX_SILENCE_BUFFER_CHUNKS:
                             audio_buffer.pop(0)
 
                     # Yield chunks when we have enough

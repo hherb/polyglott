@@ -51,10 +51,19 @@ FOLLOWUP_TIER3_TIMEOUT: Final[float] = 30.0  # Re-engagement activity
 VAD_SPEECH_THRESHOLD: Final[float] = 0.5
 
 # Number of consecutive speech frames to confirm speech start
-VAD_SPEECH_PAD_FRAMES: Final[int] = 3
+# Lower = faster detection but more false positives
+VAD_SPEECH_PAD_FRAMES: Final[int] = 2
 
 # Number of consecutive silence frames to confirm speech end
-VAD_SILENCE_PAD_FRAMES: Final[int] = 10
+# At 32ms/frame: 25 frames = 800ms, allowing natural pauses in speech
+VAD_SILENCE_PAD_FRAMES: Final[int] = 25
+
+# Pre-speech audio buffer size (chunks to keep before speech detection)
+# At 32ms/chunk: 15 chunks = ~500ms lookback to capture first syllables
+VAD_PRE_SPEECH_BUFFER_CHUNKS: Final[int] = 15
+
+# Maximum audio buffer size during silence (must be > PRE_SPEECH_BUFFER_CHUNKS)
+VAD_MAX_SILENCE_BUFFER_CHUNKS: Final[int] = 25
 
 
 class VADBackendType(str, Enum):
