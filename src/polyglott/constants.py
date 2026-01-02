@@ -151,6 +151,38 @@ LANGUAGE_NAMES: Final[dict[str, str]] = {
     "zh": "Mandarin / 中文",
 }
 
+# Reverse mapping: language names to ISO codes
+LANGUAGE_NAME_TO_CODE: Final[dict[str, str]] = {
+    "english": "en",
+    "german": "de",
+    "deutsch": "de",
+    "spanish": "es",
+    "español": "es",
+    "japanese": "ja",
+    "日本語": "ja",
+    "mandarin": "zh",
+    "chinese": "zh",
+    "中文": "zh",
+}
+
+
+def language_name_to_code(name: str) -> str:
+    """Convert a language name to its ISO code.
+
+    Args:
+        name: Language name (e.g., "English", "German / Deutsch").
+
+    Returns:
+        ISO language code (e.g., "en", "de"). Defaults to "en" if unknown.
+    """
+    # If it's already a 2-letter code, return it
+    if len(name) == 2 and name.lower() in ("en", "de", "es", "ja", "zh"):
+        return name.lower()
+
+    # Try lookup by normalized name
+    normalized = name.lower().split("/")[0].strip()
+    return LANGUAGE_NAME_TO_CODE.get(normalized, "en")
+
 # ISO language codes for TTS engines
 TTS_LANGUAGE_CODES: Final[dict[str, str]] = {
     "en": "en-us",

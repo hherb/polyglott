@@ -13,6 +13,7 @@ from polyglott.constants import (
     LANGUAGE_NAMES,
     AgeGroup,
     TargetLanguage,
+    language_name_to_code,
 )
 from polyglott.gui.components import (
     ChatBubble,
@@ -497,7 +498,14 @@ class PolyglottApp:
             try:
                 self._ensure_audio_components()
                 if self._synthesizer and self._player:
-                    result = self._synthesizer.synthesize(text, language=language)
+                    # Get native language code for default voice
+                    native_lang = language_name_to_code(
+                        self.profile.native_language if self.profile else "en"
+                    )
+                    # Use multilingual synthesis to handle language tags
+                    result = self._synthesizer.synthesize_multilingual(
+                        text, default_language=native_lang
+                    )
                     self._player.play(result.audio, result.sample_rate, blocking=True)
             except Exception as e:
                 print(f"TTS error: {e}")
@@ -647,9 +655,13 @@ class PolyglottApp:
         self.page.run_thread(update_status_speaking)
 
         if self._synthesizer and self._player:
-            synthesis = self._synthesizer.synthesize(
+            # Convert native language name to ISO code (e.g., "English" -> "en")
+            native_lang = language_name_to_code(
+                self.profile.native_language if self.profile else "en"
+            )
+            synthesis = self._synthesizer.synthesize_multilingual(
                 response.text,
-                language=self.target_language.value if self.target_language else "en",
+                default_language=native_lang,
             )
             self._player.play(synthesis.audio, synthesis.sample_rate, blocking=True)
 

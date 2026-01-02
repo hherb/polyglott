@@ -69,7 +69,7 @@ class Speaker:
 
         lang = language or self._language
         try:
-            result = self._synthesizer.synthesize(text, language=lang)
+            result = self._synthesizer.synthesize_multilingual(text, default_language=lang)
             self._player.play(result.audio, result.sample_rate, blocking=True)
         except Exception:
             pass  # Fail silently if TTS unavailable

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 import flet as ft
 
+from polyglott.utils.text import strip_language_tags
+
 from polyglott.gui.theme import (
     BORDER_RADIUS_BUBBLE,
     BUBBLE_MAX_WIDTH,
@@ -103,9 +105,10 @@ class ChatBubble(ft.Container):
             on_click=self._handle_replay,
         )
 
-        # Create message content
+        # Create message content (strip language tags for display)
+        display_text = strip_language_tags(message.text)
         message_text = ft.Text(
-            message.text,
+            display_text,
             size=FONT_SIZE_NORMAL,
             color=TEXT_PRIMARY,
             selectable=True,
